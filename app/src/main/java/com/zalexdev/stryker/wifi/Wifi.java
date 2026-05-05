@@ -36,6 +36,9 @@ import net.cachapa.expandablelayout.ExpandableLayout;
 
 import java.util.ArrayList;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public class Wifi extends Fragment {
     public ArrayList<WiFINetwork> list = new ArrayList<>();
@@ -108,114 +111,131 @@ public class Wifi extends Fragment {
         text1.setText(R.string.scanning_wifi);
         tryagain.setVisibility(View.GONE);
         wlan = core.getString("wlan_scan");
+        failedscancount = 0;
 
-        Thread scan = new Thread(() -> {
+        new Thread(() -> {
             try {
                 boolean inter;
                 ArrayList<String> wlans = core.getInterfacesList();
-                if (wlans.contains(wlan+"mon")){wlan = wlan+"mon";}
+                if (wlans.contains(wlan + "mon")) {
+                    wlan = wlan + "mon";
+                }
                 if (wlans.contains(wlan)) {
                     inter = true;
-                    if (!wlan.equals("wlan0") && wlan.contains("mon")){
-                        boolean ok = new DisableMonitor(wlan,core).executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR).get();
-                        wlan = wlan.replace("mon","");
+                    if (!wlan.equals("wlan0") && wlan.contains("mon")) {
+                        new DisableMonitor(wlan, core).executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR).get();
+                        wlan = wlan.replace("mon", "");
                         new EnableInterface(wlan, core).execute().get();
-                        }else if (!wlan.equals("wlan0")){
+                    } else if (!wlan.equals("wlan0")) {
                         new EnableInterface(wlan, core).execute().get();
-                    }
-                    else {
+                    } else {
                         inter = wifienabled();
                     }
-                    }else{
+                } else {
                     inter = false;
                 }
                 if (inter) {
-                        list = new ScanWifi(wlan, core).execute().get();
-                        while (list.isEmpty() && failedscancount <5) {
-                            if (failedscancount == 4){
-                                break;
-                            }else{
-                                Log.e("Failed scan","N: "+failedscancount);
-                                failedscancount++;
-                                Thread.sleep(3000);
-                                list = new ScanWifi(wlan, core).execute().get();
-                            }
-
-                        }
-
-                        for (int i = 0; i < list.size(); i++) {
-                            String mac = list.get(i).getMac();
-                            if (!core.getnetwork(mac).isEmpty()) {
-                                WiFINetwork w = list.get(i);
-                                w.setOK(true);
-                                w.setPsk(core.getListString(mac).get(0));
-                                if (core.getnetwork(mac).size() > 1){
-                                w.setPin(core.getListString(mac).get(1));}
-                                list.set(i, w);
-                            }
-                        }
-                        if (list.isEmpty()){
-                            activity.runOnUiThread(() -> {
-                                img.setAnimation(R.raw.nothing);
-                                img.playAnimation();
-                                tryagain.setVisibility(View.VISIBLE);
-                                text1.setText(R.string.cant_find_netw);
-                                refresh.setEnabled(true);
-                            });
-                        }
-                    else{
-                        mAdapter = new WiFI_Adapter(context, activity, list);
-                        mAdapter.setHasStableIds(true);
-                        activity.runOnUiThread(() -> {
-                            img.setVisibility(View.INVISIBLE);
-                            text1.setVisibility(View.INVISIBLE);
-                            img.clearAnimation();
-                            text1.clearAnimation();
-                            mRecyclerView.setItemViewCacheSize(255);
-                            mRecyclerView.setAdapter(mAdapter);
-                            refresh.setRefreshing(false);
-                            if (core.getBoolean("three_wifi")) {
-                                Cabinet cabinet = new Cabinet(context);
-                                cabinet.getStored();
-                                if (cabinet.getKeyView().length() > 3) {
-                                    int i = 0;
-                                    for (WiFINetwork temp : list) {
-                                        int finalI = i;
-                                        new Thread(() -> {
-                                            try {
-                                                ArrayList<WiFINetwork> three = new GetWiFI(cabinet.getKeyView(), temp.getMac()).executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR).get();
-                                                if (!three.isEmpty()) {
-                                                    temp.setPsk(three.get(0).getPsk());
-                                                    temp.setPin(three.get(0).getPin());
-                                                    temp.setOK(true);
-                                                    temp.setThree(true);
-                                                    if (activity !=null){
-                                                    activity.runOnUiThread(() -> mAdapter.changeitem(temp, finalI));}
-                                                }
-                                            } catch (ExecutionException | InterruptedException e) {
-                                                e.printStackTrace();
-                                            }
-
-                                        }).start();
-                                        i++;
-                                    }
-                                }
-                            }
-                        });}
-                    } else {
-                    if (activity !=null){
+                    performScan();
+                } else {
+                    if (activity != null) {
                         activity.runOnUiThread(() -> {
                             tryagain.setVisibility(View.VISIBLE);
                             img.setAnimation(R.raw.error);
                             img.playAnimation();
-                            text1.setText(getString(R.string.error_inter) +" "+ wlan);
-                        });}}
+                            text1.setText(getString(R.string.error_inter) + " " + wlan);
+                        });
+                    }
+                }
 
             } catch (ExecutionException | InterruptedException e) {
                 e.printStackTrace();
             }
-        });
-        scan.start();
+        }).start();
+    }
+
+    private void performScan() {
+        try {
+            list = new ScanWifi(wlan, core).execute().get();
+            if (list.isEmpty() && failedscancount < 4) {
+                Log.e("Failed scan", "N: " + failedscancount);
+                failedscancount++;
+                ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
+                executor.schedule(this::performScan, 3000, TimeUnit.MILLISECONDS);
+                executor.shutdown();
+            } else {
+                processScanResults();
+            }
+        } catch (ExecutionException | InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void processScanResults() {
+        for (int i = 0; i < list.size(); i++) {
+            String mac = list.get(i).getMac();
+            if (!core.getnetwork(mac).isEmpty()) {
+                WiFINetwork w = list.get(i);
+                w.setOK(true);
+                w.setPsk(core.getListString(mac).get(0));
+                if (core.getnetwork(mac).size() > 1) {
+                    w.setPin(core.getListString(mac).get(1));
+                }
+                list.set(i, w);
+            }
+        }
+        if (list.isEmpty()) {
+            if (activity != null) {
+                activity.runOnUiThread(() -> {
+                    img.setAnimation(R.raw.nothing);
+                    img.playAnimation();
+                    tryagain.setVisibility(View.VISIBLE);
+                    text1.setText(R.string.cant_find_netw);
+                    refresh.setEnabled(true);
+                });
+            }
+        } else {
+            mAdapter = new WiFI_Adapter(context, activity, list);
+            mAdapter.setHasStableIds(true);
+            if (activity != null) {
+                activity.runOnUiThread(() -> {
+                    img.setVisibility(View.INVISIBLE);
+                    text1.setVisibility(View.INVISIBLE);
+                    img.clearAnimation();
+                    text1.clearAnimation();
+                    mRecyclerView.setItemViewCacheSize(255);
+                    mRecyclerView.setAdapter(mAdapter);
+                    refresh.setRefreshing(false);
+                    if (core.getBoolean("three_wifi")) {
+                        Cabinet cabinet = new Cabinet(context);
+                        cabinet.getStored();
+                        if (cabinet.getKeyView().length() > 3) {
+                            int i = 0;
+                            for (WiFINetwork temp : list) {
+                                int finalI = i;
+                                new Thread(() -> {
+                                    try {
+                                        ArrayList<WiFINetwork> three = new GetWiFI(cabinet.getKeyView(), temp.getMac()).executeOnExecutor(AsyncTask.THREAD_POOL_EXECUTOR).get();
+                                        if (!three.isEmpty()) {
+                                            temp.setPsk(three.get(0).getPsk());
+                                            temp.setPin(three.get(0).getPin());
+                                            temp.setOK(true);
+                                            temp.setThree(true);
+                                            if (activity != null) {
+                                                activity.runOnUiThread(() -> mAdapter.changeitem(temp, finalI));
+                                            }
+                                        }
+                                    } catch (ExecutionException | InterruptedException e) {
+                                        e.printStackTrace();
+                                    }
+
+                                }).start();
+                                i++;
+                            }
+                        }
+                    }
+                });
+            }
+        }
     }
     /**
      * It creates a dialog box that displays all the interfaces that are currently in monitor mode. The
