@@ -94,11 +94,11 @@
         android:layout_width="60dp"
         android:layout_height="60dp"
         android:src="@drawable/next"
-        android:tint="@color/white"
+        app:tint="@color/white"
         android:layout_marginBottom="25dp"
         android:layout_gravity="right"
         android:background="@drawable/circle"
-        android:backgroundTint="@color/blue2"
+        app:backgroundTint="@color/blue2"
         android:layout_marginRight="15dp"/>
 </LinearLayout>
 </ScrollView>

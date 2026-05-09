@@ -36,7 +36,7 @@
         android:layout_alignParentBottom="true"
         android:layout_marginEnd="10dp"
         android:layout_marginBottom="20dp"
-        android:backgroundTint="@color/blue2"
+        app:backgroundTint="@color/blue2"
         android:text="@string/relaunch_app"
         android:textColor="@color/white"
         app:icon="@drawable/update"

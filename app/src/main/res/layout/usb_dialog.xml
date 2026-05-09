@@ -53,7 +53,7 @@
         android:layout_marginRight="20dp"
         android:drawableTint="@color/white"
         android:text="Change scan interface"
-        android:backgroundTint="@color/blue2"
+        app:backgroundTint="@color/blue2"
         app:cornerRadius="5dp"
         android:id="@+id/change_listen"/>
 <com.google.android.material.button.MaterialButton
@@ -63,7 +63,7 @@
     android:layout_marginRight="20dp"
     android:drawableTint="@color/white"
     android:text="Change deauth interface"
-    android:backgroundTint="@color/blue2"
+    app:backgroundTint="@color/blue2"
     android:layout_marginBottom="10dp"
     app:cornerRadius="5dp"
     android:id="@+id/change_deauth"/>
