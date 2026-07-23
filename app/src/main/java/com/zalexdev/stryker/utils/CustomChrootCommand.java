@@ -10,7 +10,6 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.util.ArrayList;
 
 public class CustomChrootCommand extends AsyncTask<Void, String, Boolean> {
@@ -37,14 +36,9 @@ public class CustomChrootCommand extends AsyncTask<Void, String, Boolean> {
         Logger logger = new Logger();
         try {
             logger.writeLine("Running chroot command "+cmd,1);
-            Process process = Runtime.getRuntime().exec("su -mm");
-            OutputStream stdin = process.getOutputStream();
+            Process process = new ProcessBuilder("su", "-mm", "-c", Core.EXECUTE + " '" + cmd + "'").start();
             InputStream stderr = process.getErrorStream();
             InputStream stdout = process.getInputStream();
-            stdin.write((Core.EXECUTE + " '" + cmd + "'" + '\n').getBytes());
-            stdin.write(("exit\n").getBytes());
-            stdin.flush();
-            stdin.close();
             ArrayList<String> out = new ArrayList<>();
             ArrayList<String> outerror = new ArrayList<>();
             BufferedReader br = new BufferedReader(new InputStreamReader(stdout));
