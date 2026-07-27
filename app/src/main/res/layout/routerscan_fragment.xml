@@ -39,7 +39,7 @@
             android:scrollbars="vertical"
             android:layout_marginStart="10dp"
             android:layout_marginTop="10dp"
-            android:backgroundTint="@color/nightrec"
+            app:backgroundTint="@color/nightrec"
             android:id="@+id/router_ranges_card">
             <TextView
                 android:layout_width="match_parent"
@@ -68,7 +68,7 @@
             android:scrollbars="vertical"
             android:layout_marginStart="10dp"
             android:layout_marginTop="10dp"
-            android:backgroundTint="@color/nightrec"
+            app:backgroundTint="@color/nightrec"
             android:id="@+id/router_port_card">
             <TextView
                 android:layout_width="match_parent"
@@ -97,7 +97,7 @@
                     android:layout_height="30dp"
                     android:layout_marginEnd="5dp"
                     android:src="@drawable/save"
-                    android:tint="@color/grey"
+                    app:tint="@color/grey"
                     />
                 <ImageView
                     android:id="@+id/router_settings_icon"
@@ -105,7 +105,7 @@
                     android:layout_height="30dp"
 
                     android:src="@drawable/settings"
-                    android:tint="@color/grey"
+                    app:tint="@color/grey"
                     />
             </LinearLayout>
 
@@ -135,7 +135,7 @@
             android:src="@drawable/arrow_down"
             android:layout_gravity="center"
             android:rotation="180"
-            android:tint="#606060"
+            app:tint="#606060"
             />
     </LinearLayout>
     <androidx.recyclerview.widget.RecyclerView
@@ -188,7 +188,7 @@
             android:layout_width="20dp"
             android:layout_height="20dp"
             android:src="@drawable/circle"
-            android:tint="@color/green"/>
+            app:tint="@color/green"/>
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -201,7 +201,7 @@
             android:layout_height="20dp"
             android:src="@drawable/circle"
             android:layout_marginLeft="5dp"
-            android:tint="@color/red"/>
+            app:tint="@color/red"/>
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

@@ -63,7 +63,7 @@
                 android:layout_gravity="center_vertical"
                 android:layout_marginStart="12dp"
                 android:src="@drawable/settings"
-                android:tint="@color/grey" />
+                app:tint="@color/grey" />
         </LinearLayout>
 
         <net.cachapa.expandablelayout.ExpandableLayout
@@ -245,7 +245,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent"
                                 android:layout_margin="8dp"
-                                android:tint="@color/grey"
+                                app:tint="@color/grey"
                                 android:src="@drawable/exploithub" />
 
 
@@ -279,7 +279,7 @@
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent"
                                 android:layout_margin="8dp"
-                                android:tint="@color/grey"
+                                app:tint="@color/grey"
                                 android:src="@drawable/scanner" />
 
 
@@ -420,7 +420,7 @@
                                 android:layout_height="match_parent"
                                 android:layout_margin="8dp"
                                 android:src="@drawable/msf"
-                                android:tint="@color/grey" />
+                                app:tint="@color/grey" />
 
 
                         </com.google.android.material.card.MaterialCardView>
@@ -491,7 +491,7 @@
                                 android:layout_height="match_parent"
                                 android:layout_margin="8dp"
                                 android:src="@drawable/three_wifi_database"
-                                android:tint="@color/grey" />
+                                app:tint="@color/grey" />
 
 
                         </com.google.android.material.card.MaterialCardView>
@@ -527,7 +527,7 @@
                                 android:layout_height="match_parent"
                                 android:layout_margin="8dp"
                                 android:src="@drawable/geo"
-                                android:tint="@color/grey" />
+                                app:tint="@color/grey" />
 
 
                         </com.google.android.material.card.MaterialCardView>
@@ -563,7 +563,7 @@
                                 android:layout_height="match_parent"
                                 android:layout_margin="8dp"
                                 android:src="@drawable/router"
-                                android:tint="@color/grey" />
+                                app:tint="@color/grey" />
 
 
                         </com.google.android.material.card.MaterialCardView>

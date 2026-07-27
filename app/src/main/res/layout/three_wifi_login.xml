@@ -13,7 +13,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@drawable/magic_rect"
-        android:backgroundTint="@color/blue2"
+        app:backgroundTint="@color/blue2"
         android:orientation="vertical"
         android:padding="25dp"
         android:layout_margin="10dp"

@@ -46,7 +46,7 @@
             android:layout_height="50dp"
             android:layout_margin="10dp"
             android:src="@drawable/interface_scan"
-            android:tint="#006064" />
+            app:tint="#006064" />
 
         <TextView
             android:layout_width="match_parent"
@@ -91,7 +91,7 @@
             android:layout_height="50dp"
             android:layout_margin="10dp"
             android:src="@drawable/interface_deauth"
-            android:tint="#C54500" />
+            app:tint="#C54500" />
 
         <TextView
             android:layout_width="match_parent"
@@ -141,7 +141,7 @@
             android:layout_height="44dp"
             android:layout_margin="10dp"
             android:src="@drawable/noof"
-            android:tint="#6200EA" />
+            app:tint="#6200EA" />
 
         <TextView
             android:layout_width="match_parent"
@@ -184,7 +184,7 @@
             android:layout_height="44dp"
             android:layout_margin="10dp"
             android:src="@drawable/update"
-            android:tint="#1B5E20" />
+            app:tint="#1B5E20" />
 
         <TextView
             android:layout_width="match_parent"
@@ -233,7 +233,7 @@
             android:layout_height="44dp"
             android:layout_margin="10dp"
             android:src="@drawable/wifi3"
-            android:tint="#33691E" />
+            app:tint="#33691E" />
 
         <TextView
             android:layout_width="match_parent"
@@ -276,7 +276,7 @@
             android:layout_height="44dp"
             android:layout_margin="10dp"
             android:src="@drawable/store"
-            android:tint="#B19A23" />
+            app:tint="#B19A23" />
 
         <TextView
             android:layout_width="match_parent"
@@ -328,7 +328,7 @@
                 android:layout_height="50dp"
                 android:layout_margin="10dp"
                 android:src="@drawable/night_mode"
-                android:tint="#01579B"
+                app:tint="#01579B"
                 />
 
             <TextView
@@ -370,7 +370,7 @@
                 android:layout_height="50dp"
                 android:layout_margin="10dp"
                 android:src="@drawable/hidemac"
-                android:tint="#4A148C"
+                app:tint="#4A148C"
                 />
 
             <TextView
@@ -421,7 +421,7 @@
                 android:layout_height="50dp"
                 android:layout_margin="10dp"
                 android:src="@drawable/debug"
-                android:tint="#717171"
+                app:tint="#717171"
                 />
 
             <TextView
@@ -461,7 +461,7 @@
                 android:layout_height="50dp"
                 android:layout_margin="10dp"
                 android:src="@drawable/module"
-                android:tint="#32AABA"
+                app:tint="#32AABA"
                 />
 
             <TextView
@@ -512,7 +512,7 @@
                 android:layout_height="50dp"
                 android:layout_margin="10dp"
                 android:src="@drawable/unmount"
-                android:tint="#880E4F" />
+                app:tint="#880E4F" />
 
             <TextView
                 android:layout_width="match_parent"
@@ -557,7 +557,7 @@
                 android:layout_height="50dp"
                 android:layout_margin="10dp"
                 android:src="@drawable/delete"
-                android:tint="#B71C1C" />
+                app:tint="#B71C1C" />
 
             <TextView
                 android:layout_width="match_parent"

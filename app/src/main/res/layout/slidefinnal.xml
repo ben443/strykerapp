@@ -12,9 +12,9 @@
         android:layout_height="150dp"
         android:src="@drawable/ok"
         android:padding="30dp"
-        android:tint="@color/white"
+        app:tint="@color/white"
         android:background="@drawable/circle"
-        android:backgroundTint="#2196F3"
+        app:backgroundTint="#2196F3"
         android:layout_gravity="center_horizontal"
         />
     <com.google.android.material.textview.MaterialTextView
@@ -49,7 +49,7 @@
         android:layout_height="wrap_content"
         android:text="@string/laucnh"
         app:icon="@drawable/bolt"
-        android:backgroundTint="#2196F3"
+        app:backgroundTint="#2196F3"
         app:cornerRadius="10dp"/>
 
 </LinearLayout>

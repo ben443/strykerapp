@@ -299,7 +299,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="50dp"
                 android:text="@string/cancel"
-                android:backgroundTint="@color/blue"
+                app:backgroundTint="@color/blue"
                 android:layout_margin="10dp"
                 android:id="@+id/cancel_attack"/>
         </LinearLayout>
@@ -340,14 +340,14 @@
                 android:drawableLeft="@drawable/wifi"
                 android:visibility="gone"
                 android:textColor="@color/white"
-                android:backgroundTint="@color/blue"
+                app:backgroundTint="@color/blue"
                 android:layout_margin="10dp"
                 android:id="@+id/connect"/>
             <Button
                 android:layout_width="match_parent"
                 android:layout_height="50dp"
                 android:text="@string/return_back"
-                android:backgroundTint="@color/blue"
+                app:backgroundTint="@color/blue"
                 android:layout_margin="10dp"
                 android:id="@+id/back"/>
         </LinearLayout>
