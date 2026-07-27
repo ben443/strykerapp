@@ -19,8 +19,6 @@ import android.net.wifi.WifiManager;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Environment;
-import android.os.Handler;
-import android.os.Looper;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.preference.PreferenceManager;
@@ -61,7 +59,7 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.NetworkInterface;
-import java.net.URI;
+import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -889,20 +887,30 @@ public class Core {
 
     }
     // Pinging host ip:port
-    public boolean ping(String ip, int port,int timeout) {
+    public boolean ping(String ip, int port, int timeout) {
+        HttpURLConnection connection = null;
         try {
-            URI uri;
-            Log.e("Ping","Pinging... "+ip+":"+port);
-            if(port !=443){uri = URI.create("http://" + ip + ":" + port + "/");}else{uri = URI.create("https://" + ip + "/"); }
-            HttpURLConnection connection = (HttpURLConnection) uri.toURL().openConnection();
-            Log.e("Ping","Finished ping "+ip+":"+port);
+            Log.d("Ping", "Pinging... " + ip + ":" + port);
+            // Default to HTTPS for known secure ports, otherwise use HTTP
+            String protocol = "http";
+            if (port == 443 || port == 8443 || port == 4443 || port == 9443) {
+                protocol = "https";
+            }
+            URL url = new URL(protocol, ip, port, "/");
+            connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("GET");
             connection.setConnectTimeout(timeout);
-            final Handler handler = new Handler(Looper.getMainLooper());
-            handler.postDelayed(connection::disconnect, timeout + 4000);
-            return connection.getResponseCode() >= 200 && !(connection.getResponseCode() == 404) && !(connection.getResponseCode() == 403);
+            connection.setReadTimeout(timeout);
+            int responseCode = connection.getResponseCode();
+            Log.d("Ping", "Finished ping " + ip + ":" + port + " with code " + responseCode);
+            return responseCode >= 200 && responseCode != 404 && responseCode != 403;
         } catch (Exception e) {
+            Log.d("Ping", "Error pinging " + ip + ":" + port + ": " + e.getMessage());
             return false;
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
         }
     }
 
