@@ -349,9 +349,6 @@ public class Slide3 extends Fragment {
         core.chmodFolder("/data/data/com.zalexdev.stryker/files/");
         core.createFolder(core.getStorage() + "/Stryker/");
         core.createFolder("/data/local/stryker");
-        // Any live mount under the chroot root counts, not just a fully assembled one: a chroot
-        // from before 4.5R binds the whole /sdcard inside itself, and both the extract below and
-        // purgeChroot would otherwise run straight across it into the user's real storage.
         boolean anyMount = !core.mountsUnder(Core.CHROOT_ROOT).isEmpty();
         if (anyMount || core.isMounted() || core.checkFolder(Core.CHROOT_ROOT + "/bin")) {
             log(LogLevel.STEP, "Removing the previous Linux system");

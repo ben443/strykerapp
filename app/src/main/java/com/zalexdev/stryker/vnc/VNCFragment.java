@@ -280,10 +280,8 @@ public class VNCFragment extends Fragment {
         return core.isRootless() ? stageForGuest() : stageForChroot();
     }
 
-    /** The VM only sees the 9p share, so the scripts have to travel through it. */
     private boolean stageForGuest() {
         java.io.File staging = new java.io.File(core.getShareRoot(), ".stryker-vnc");
-        //noinspection ResultOfMethodCallIgnored
         staging.mkdirs();
         if (!stageAsset("install_xfce.sh", new java.io.File(staging, "install.sh"))) return false;
         if (!stageAsset("uninstall_xfce.sh", new java.io.File(staging, "uninstall.sh"))) return false;
@@ -295,14 +293,8 @@ public class VNCFragment extends Fragment {
         return core.guestFileExists(VNC_DIR + "/install.sh");
     }
 
-    /**
-     * Chroot: never route this through shared storage. From Android 11 the app has no write access
-     * to /sdcard unless the user grants all-files access, and refusing it used to fail the whole
-     * install. The app's own files dir is always writable, and root copies from there.
-     */
     private boolean stageForChroot() {
         java.io.File staging = new java.io.File(context.getFilesDir(), ".stryker-vnc");
-        //noinspection ResultOfMethodCallIgnored
         staging.mkdirs();
         if (!stageAsset("install_xfce.sh", new java.io.File(staging, "install.sh"))) return false;
         if (!stageAsset("uninstall_xfce.sh", new java.io.File(staging, "uninstall.sh"))) return false;
@@ -442,7 +434,6 @@ public class VNCFragment extends Fragment {
         logRecycler.setVisibility(View.VISIBLE);
     }
 
-    /** The stage list and installer output only make sense while installing or after a failure. */
     private void hideInstallSurfaces() {
         stagesHeader.setVisibility(View.GONE);
         stagesCard.setVisibility(View.GONE);
@@ -662,7 +653,6 @@ public class VNCFragment extends Fragment {
     }
 
     private void vncNotInstalled() {
-        // Keep them up after a failed run so the error stays readable.
         if (logAdapter.size() == 0) hideInstallSurfaces();
         install.setVisibility(View.VISIBLE);
         resolutionLayout.setVisibility(View.GONE);

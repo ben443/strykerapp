@@ -34,11 +34,10 @@ public enum EngineType {
             java.io.File flag = RootlessPaths.activeFlag(core.context);
             if (type == ROOTLESS) {
                 java.io.File dir = flag.getParentFile();
-                if (dir != null && !dir.exists()) //noinspection ResultOfMethodCallIgnored
+                if (dir != null && !dir.exists())
                     dir.mkdirs();
                 try (java.io.FileWriter w = new java.io.FileWriter(flag, false)) { w.write("1"); }
             } else if (flag.exists()) {
-                //noinspection ResultOfMethodCallIgnored
                 flag.delete();
             }
         } catch (Exception ignored) {}

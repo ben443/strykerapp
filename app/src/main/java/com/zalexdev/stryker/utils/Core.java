@@ -96,8 +96,6 @@ public class Core {
     public final static String SHELL = "bash";
     public final static String CHROOT_ROOT = "/data/local/stryker/release";
 
-    /** Marker written after a successful chroot install. The name IS the rootfs generation:
-     *  "4.0" is the old Alpine tree, "6.0" the Debian one. */
     public final static String CHROOT_MARKER_VERSION = "6.0";
     public final static String CHROOT_MARKER = CHROOT_ROOT + "/" + CHROOT_MARKER_VERSION;
     private final static String[] LEGACY_CHROOT_MARKERS = {"4.0"};
@@ -304,15 +302,6 @@ public class Core {
         }
     }
 
-    /**
-     * The path the app process can use to reach {@code path}, or null when it is not somewhere
-     * the app can read directly.
-     *
-     * Three spellings of the same directory are in use across the codebase: the guest/chroot
-     * path (/sdcard/Stryker/...), the host path (getStorage() + "Stryker/..."), and getShareRoot().
-     * Under root the last two are the same directory, but when rootless the share lives somewhere
-     * else entirely, so both of the first two have to be redirected onto the share root.
-     */
     public String hostPath(String path) {
         if (path == null || path.isEmpty()) return null;
         final String guestRoot = "/sdcard/Stryker";
@@ -323,15 +312,6 @@ public class Core {
         return null;
     }
 
-    /**
-     * Names of the files in {@code parentDir}.
-     *
-     * Shared storage is listed through the app process in every mode, deliberately. A root shell
-     * does not necessarily see /storage/emulated/0 the way the app does — each app gets its own
-     * mount namespace and plain `su` stays outside it, so `ls` can come back empty for a folder
-     * the user is looking at in a file manager. Listing through the app is what makes the UI
-     * agree with the user; only paths the app genuinely cannot read fall through to the shell.
-     */
     public ArrayList<String> getListFiles(String parentDir) {
         String host = hostPath(parentDir);
         if (host != null) {
@@ -701,7 +681,6 @@ public class Core {
         }
         return mounted;
     }
-    /** True when a chroot from before the Debian move is installed. */
     public boolean hasLegacyChroot(){
         if (isRootless()) return false;
         if (checkFile(CHROOT_MARKER)) return false;
@@ -711,19 +690,6 @@ public class Core {
         return false;
     }
 
-    /**
-     * Every mountpoint currently attached at or under {@code path}, read from /proc/mounts.
-     *
-     * This is the gate in front of every recursive delete under the chroot, and it is
-     * deliberately layout-agnostic. isMounted() answers a different question — "is the chroot
-     * fully assembled and usable" — and requires a specific set of mounts, so it reports false
-     * for a chroot that is only partly attached. A half-torn-down chroot is exactly the state
-     * where deleting is most destructive, and it is also what an upgrade from an older Stryker
-     * looks like: releases before 4.5R bound the WHOLE /sdcard at <root>/sdcard instead of
-     * <root>/sdcard/Stryker, so a readiness check that looks for the current layout sees
-     * "not mounted" while the user's entire internal storage is still attached underneath.
-     * Anything at or under the path counts here, whatever its shape.
-     */
     public ArrayList<String> mountsUnder(String path) {
         ArrayList<String> mounts = new ArrayList<>();
         if (path == null || path.isEmpty()) return mounts;
@@ -732,18 +698,12 @@ public class Core {
             if (s == null) continue;
             String[] parts = s.trim().split("\\s+");
             if (parts.length < 2) continue;
-            // /proc/mounts escapes spaces in the target as \040.
             String target = parts[1].replace("\\040", " ");
             if (target.equals(root) || target.startsWith(root + "/")) mounts.add(target);
         }
         return mounts;
     }
 
-    /**
-     * True only when /proc/mounts was actually read. Every caller here is about to delete
-     * something, so an unreadable mount table has to fail closed: no root, a dead su session or
-     * a truncated read would otherwise look identical to "nothing is mounted".
-     */
     private boolean mountTableReadable() {
         for (String s : customCommand("cat /proc/mounts", true)) {
             if (s != null && s.contains(" / ")) return true;
@@ -751,11 +711,6 @@ public class Core {
         return false;
     }
 
-    /**
-     * rm -rf that refuses to run while anything is still mounted at or under the target.
-     * The chroot binds real storage inside itself, so deleting across a live bind walks
-     * straight through it and destroys the user's data instead of the chroot.
-     */
     public boolean safeDeleteTree(String path) {
         if (path == null || path.trim().isEmpty() || path.trim().equals("/")) {
             logger.writeLine("Refusing to delete an empty or root path", 3);
@@ -779,11 +734,6 @@ public class Core {
         return true;
     }
 
-    /**
-     * Unmount and delete the installed rootfs. Refuses to delete while anything is still mounted:
-     * the chroot bind-mounts real storage inside itself, so an rm -rf over a live mount would
-     * wipe the user's data.
-     */
     public boolean purgeChroot(){
         logger.writeLine("Removing the previous chroot", 1);
         unmountCore();
@@ -803,12 +753,10 @@ public class Core {
         return gone;
     }
 
-    /** Runs killroot and reports whether the chroot is genuinely detached afterwards. */
     public Boolean unmountCore(){
         customMegaCommand("/data/data/com.zalexdev.stryker/files/killroot");
         return mountTableReadable() && mountsUnder(CHROOT_ROOT).isEmpty();
     }
-    /** True when the chroot is fully assembled and usable — not a safety check, see mountsUnder. */
     public Boolean isMounted(){
         return isChrootMounted(CHROOT_ROOT);
     }
@@ -889,7 +837,6 @@ public class Core {
         }
     }
 
-    /** True when the last generateSuProcess() could not spawn su at all. See the note there. */
     private volatile boolean suSpawnFailed = false;
 
     public boolean suSpawnFailed() { return suSpawnFailed; }
@@ -900,11 +847,6 @@ public class Core {
             suSpawnFailed = false;
             return process;
         } catch (IOException e) {
-            // No su on this device. Most callers dereference the returned Process without a null
-            // check, so hand back an inert one instead of crashing them — but record the fact.
-            // Without that flag a missing su is indistinguishable from a command that simply
-            // printed nothing, and every failure downstream invents its own reason for the empty
-            // output: that is how "no root" used to surface as "no usable tar".
             suSpawnFailed = true;
             logger.writeLine("su is not available on this device", 3);
             try {
@@ -1157,20 +1099,16 @@ public class Core {
             os.flush();
         } catch (IOException e) {
             Log.e("Core", "Failed to extract " + BUSYBOX_ASSET, e);
-            //noinspection ResultOfMethodCallIgnored
             tmp.delete();
             return out.length() > 0 && out.canExecute();
         }
         if (tmp.length() <= 0) {
-            //noinspection ResultOfMethodCallIgnored
             tmp.delete();
             return false;
         }
         try { tmp.setExecutable(true, false); } catch (Exception ignored) {}
-        //noinspection ResultOfMethodCallIgnored
         out.delete();
         if (!tmp.renameTo(out)) {
-            //noinspection ResultOfMethodCallIgnored
             tmp.delete();
             return false;
         }
@@ -1195,15 +1133,6 @@ public class Core {
         return null;
     }
 
-    /**
-     * Why tarCommand() came back null, phrased for the user.
-     *
-     * Both probes it runs — the busybox smoke test and `command -v tar` — go through a root
-     * shell, so on a device with no usable su every one of them returns nothing and the chain
-     * reads as "busybox is broken and the system has no tar". That conclusion is wrong: Android
-     * has shipped a toybox tar since 6.0, and a working root shell would have found it. Empty
-     * output there means no shell ran, so say that instead of blaming tar.
-     */
     public String tarFailureReason() {
         if (suSpawnFailed() || !checkRoot()) {
             return "no root access — su did not return a root shell";
@@ -1223,7 +1152,6 @@ public class Core {
                         byte[] buf = new byte[8192]; int r;
                         while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
                     }
-                    //noinspection ResultOfMethodCallIgnored
                     src.delete();
                 }
             } catch (Exception e) {
@@ -1251,13 +1179,11 @@ public class Core {
         if (children != null) {
             for (File c : children) deleteRecursively(c);
         }
-        //noinspection ResultOfMethodCallIgnored
         target.delete();
     }
 
     public void createFolder(@NonNull String folder){
         if (isRootless()) {
-            //noinspection ResultOfMethodCallIgnored
             new File(folder).mkdirs();
             return;
         }

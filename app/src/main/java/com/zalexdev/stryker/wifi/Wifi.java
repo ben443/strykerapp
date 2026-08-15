@@ -963,7 +963,6 @@ public class Wifi extends Fragment {
                     java.io.File src = newestCapture(hsDir, "handshakenow-");
                     boolean saved = false;
                     if (src != null) {
-                        //noinspection ResultOfMethodCallIgnored
                         new java.io.File(capturedDir).mkdirs();
                         core.moveFile(src.getAbsolutePath(), dest);
                         saved = new java.io.File(dest).isFile();

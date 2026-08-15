@@ -101,11 +101,6 @@ public final class RemoteManifest {
 
         JSONObject core = root.optJSONObject("core");
         if (core != null) {
-            // core.chroot64 / core.chroot32 are the legacy Alpine tarballs. Builds below 6 are
-            // already published and read those keys directly, so they can never be repointed.
-            // This build takes its rootfs only from core.debian, and never falls back to the
-            // legacy keys — installing an Alpine tarball into a Debian layout would be worse
-            // than failing.
             JSONObject debian = core.optJSONObject("debian");
             if (debian != null
                     && com.zalexdev.stryker.BuildConfig.VERSION_CODE

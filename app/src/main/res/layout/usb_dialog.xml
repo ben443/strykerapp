@@ -177,7 +177,6 @@
                     android:visibility="gone" />
             </LinearLayout>
 
-            <!-- Rootless: live "attaching dongle to the VM" status. Driven from MainActivity. -->
             <com.google.android.material.card.MaterialCardView
                 android:id="@+id/usb_attach_card"
                 android:layout_width="match_parent"

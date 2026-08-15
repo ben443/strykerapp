@@ -170,11 +170,9 @@ public final class QemuInstaller {
                 if (!fetch(b.rootfs, archive, "rootfs", p)) return false;
                 log(p, 1, "Decompressing rootfs (this can take a minute)");
                 if (!gunzipFile(archive, rootfs, p)) {
-                    //noinspection ResultOfMethodCallIgnored
                     archive.delete();
                     return false;
                 }
-                //noinspection ResultOfMethodCallIgnored
                 archive.delete();
             }
 
@@ -236,12 +234,10 @@ public final class QemuInstaller {
             out.flush();
         } catch (IOException e) {
             log(p, 3, "Decompression failed: " + e.getMessage());
-            //noinspection ResultOfMethodCallIgnored
             tmp.delete();
             return false;
         }
         if (!tmp.renameTo(dest)) {
-            //noinspection ResultOfMethodCallIgnored
             dest.delete();
             if (!tmp.renameTo(dest)) {
                 log(p, 3, "rename failed for " + dest);
@@ -296,7 +292,6 @@ public final class QemuInstaller {
             out.flush();
         }
         if (!tmp.renameTo(dest)) {
-            //noinspection ResultOfMethodCallIgnored
             dest.delete();
             if (!tmp.renameTo(dest)) throw new IOException("rename failed for " + dest);
         }
@@ -324,7 +319,6 @@ public final class QemuInstaller {
             out.flush();
         }
         if (!tmp.renameTo(dest)) {
-            //noinspection ResultOfMethodCallIgnored
             dest.delete();
             if (!tmp.renameTo(dest)) throw new IOException("rename failed for " + dest);
         }

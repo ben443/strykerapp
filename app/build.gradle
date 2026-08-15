@@ -69,8 +69,6 @@ android {
     }
 
     aaptOptions {
-        // Keep the rootless engine artifacts stored (not re-compressed) so extraction is fast and
-        // the already-gzipped rootfs isn't double-compressed. Suffix match covers the ext-less files.
         noCompress "tar.gz", "gz", "imgz", "db", "sqlite", "img", "so", "qemu-system-aarch64", "Image"
     }
 

@@ -34,7 +34,6 @@
             android:textColor="@color/grey"
             android:textSize="13sp" />
 
-        <!-- Rootless / QEMU -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/card_rootless"
             android:layout_width="match_parent"
@@ -105,7 +104,6 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Root / Chroot -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/card_chroot"
             android:layout_width="match_parent"

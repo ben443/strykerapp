@@ -101,7 +101,6 @@ public final class VmProbe {
             return new Result(false, t.getMessage() == null ? t.toString() : t.getMessage());
         } finally {
             if (probeFile != null) {
-                //noinspection ResultOfMethodCallIgnored
                 probeFile.delete();
             }
         }
@@ -116,7 +115,6 @@ public final class VmProbe {
                     RootlessPaths.base(ctx).getAbsolutePath() + ":/system/lib64:/vendor/lib64");
             pb.redirectErrorStream(true);
             try {
-                //noinspection ResultOfMethodCallIgnored
                 qemu.setExecutable(true, false);
             } catch (Exception ignored) {
             }

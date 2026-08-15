@@ -55,7 +55,6 @@ public class HandshakeStorage extends Fragment {
         context = getContext();
         activity = getActivity();
         core = new Core(context);
-        //noinspection ResultOfMethodCallIgnored
         new File(captureDir()).mkdirs();
 
         recyclerView = view.findViewById(R.id.hs_list);

@@ -87,7 +87,6 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
         if (safe.length() > 120) safe = safe.substring(safe.length() - 120);
         String dest = captureDir + "/" + safe;
         String hsDir = core.getShareRoot() + "/hs";
-        //noinspection ResultOfMethodCallIgnored
         new java.io.File(captureDir).mkdirs();
 
         java.io.File[] caps = new java.io.File(hsDir)
@@ -104,10 +103,6 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
         }
         if (core.isRootless()) return null;
 
-        // airodump wrote the capture as root from inside the chroot, and a root process does not
-        // always share the app's view of shared storage: listFiles() above can come back empty
-        // for a file that is really there. Retry the whole pick-and-move inside a mount-master
-        // root shell, which joins the same namespace the app sees.
         core.customMegaCommand("mkdir -p '" + captureDir + "'; "
                 + "src=$(ls -1t '" + hsDir + "'/handshake-*.cap 2>/dev/null | head -n 1); "
                 + "if [ -n \"$src\" ]; then mv -f \"$src\" '" + dest + "'; fi");

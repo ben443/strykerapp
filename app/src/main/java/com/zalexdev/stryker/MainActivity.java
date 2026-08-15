@@ -229,9 +229,6 @@ public class MainActivity extends AppCompatActivity {
                 if (changed && engineStatusDrawer != null) {
                     wireDrawerRows(navView, engineStatusDrawer);
                 }
-                // While the VM is still coming up every tool stays locked, so keep re-checking
-                // until the guest answers — otherwise the rows only unlock when the drawer is
-                // reopened by hand.
                 if (rootless && !es.ready && !engineWatchPending) {
                     engineWatchPending = true;
                     navView.postDelayed(() -> {
@@ -546,9 +543,6 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         if (!core.getBoolean("first_open") || !core.checkFile(Core.CHROOT_MARKER)) {
-            // A pre-6 install leaves the old Alpine tree behind with its own marker. It cannot run
-            // the Debian toolset, so route straight into the installer, which unmounts and wipes it
-            // before fetching the rootfs the manifest offers this build.
             core.putString("username", "User");
             launchRunning = false;
             Intent intro = new Intent(this, AppIntroActivity.class);

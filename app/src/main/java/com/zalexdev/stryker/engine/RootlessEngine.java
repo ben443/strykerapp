@@ -180,10 +180,6 @@ public final class RootlessEngine {
                     if (listener != null) listener.onBooted();
                     return null;
                 }
-                // The guest can be fully up with no agent listening — Debian boots, the console
-                // sits at a root prompt, and port 1050 stays silent because nothing serves it.
-                // Waiting longer never fixes that, so once the console shows the guest is alive,
-                // bootstrap the agent through it instead of running out the clock.
                 if (!consoleTried && VmBootStage.detect(tailLog(120)) >= VmBootStage.AGENT) {
                     consoleTried = true;
                     note(listener, "Guest is up but the agent is not answering — starting it");
@@ -282,7 +278,7 @@ public final class RootlessEngine {
 
     private static void deleteQuietly(File f) {
         try {
-            if (f != null && f.exists()) //noinspection ResultOfMethodCallIgnored
+            if (f != null && f.exists())
                 f.delete();
         } catch (Throwable ignored) {
         }
@@ -340,16 +336,6 @@ public final class RootlessEngine {
         teardownRunning();
     }
 
-    /**
-     * Tears down whatever VM is currently running, without claiming the user asked to stop.
-     *
-     * stopRequested is the "abandon the boot we are waiting on" signal that attemptBoot() polls.
-     * Clearing out a previous instance before starting a new one must not set it: doing so marks
-     * the boot that has not even launched yet as stopped, and attemptBoot() bails on its first
-     * loop with reason "stopped". Because each aborted attempt still leaves its own QEMU alive,
-     * the next start() finds a live process, tears it down, sets the flag again, and the engine
-     * never gets past this point.
-     */
     private void teardownRunning() {
         booted = false;
         guestPrompt = "";
@@ -534,7 +520,6 @@ public final class RootlessEngine {
                     + "if [ -d /tmp/stryker-ird/lib/modules ]; then mkdir -p /lib/modules; "
                     + "cp -a /tmp/stryker-ird/lib/modules/. /lib/modules/; depmod -a >/dev/null 2>&1; "
                     + "echo __MODULES_DEPLOYED__; fi; rm -rf /tmp/stryker-ird");
-            //noinspection ResultOfMethodCallIgnored
             staged.delete();
             ArrayList<String> res = GuestExec.run(
                     "modprobe loop >/dev/null 2>&1; modprobe squashfs >/dev/null 2>&1; "
@@ -593,7 +578,6 @@ public final class RootlessEngine {
 
     private static final String CORE_MARKER = "/CORE/PixieWps/pixie.py";
     private static final String CORE_ASSET = "rootless/stryker-guest-core.tar";
-    /** Name the payload carries inside the 9p share, i.e. /sdcard/Stryker/<this> in the guest. */
     private static final String STAGED_CORE = ".stryker-guest-core.tar";
 
     public synchronized boolean ensureGuestCore() {
@@ -606,16 +590,6 @@ public final class RootlessEngine {
         return deployGuestCore();
     }
 
-    /**
-     * Shell that unpacks the staged payload and reports whether the AGENT specifically survived.
-     *
-     * The witness matters. Checking only {@link #CORE_MARKER} — a file from the /CORE part of the
-     * archive — lets a deploy that produced a zero-byte /usr/local/sbin/stryker-agentd report
-     * success. systemd then fails that unit with 203/EXEC forever, and because every repair path
-     * runs through the agent, the VM never recovers: this is how an app update leaves a working
-     * guest permanently stuck at "waiting for the guest agent". Test the file the guest actually
-     * has to execute, and test it for content (-s), not just presence.
-     */
     private static String unpackAndVerify(String tarPath) {
         return "tar xf " + tarPath + " -C / 2>&1; "
                 + "chmod 0755 /usr/local/sbin/stryker-ptyd /usr/local/sbin/stryker-agentd 2>/dev/null; "
@@ -624,7 +598,6 @@ public final class RootlessEngine {
                 + "&& [ -f " + CORE_MARKER + " ]; then echo __DEPLOYED__; else echo __FAIL__; fi";
     }
 
-    /** Copies the payload into the share and makes sure it is on disk before the guest reads it. */
     private java.io.File stageGuestCore(java.io.File shareDir) throws java.io.IOException {
         java.io.File staged = new java.io.File(shareDir, STAGED_CORE);
         try (java.io.InputStream in = app.getAssets().open(CORE_ASSET);
@@ -633,10 +606,6 @@ public final class RootlessEngine {
             int r;
             while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
             out.flush();
-            // flush() only empties the Java buffer. The guest reads this file through 9p, so it
-            // has to be on disk before tar runs there — otherwise tar sees a short archive and
-            // creates the entries it never got the contents for, which is exactly the zero-byte
-            // agent that breaks the VM for good.
             out.getFD().sync();
         }
         return staged;
@@ -655,7 +624,6 @@ public final class RootlessEngine {
                             + l.trim().substring("__AGENT_BYTES__".length()) + " bytes");
                 }
             }
-            //noinspection ResultOfMethodCallIgnored
             staged.delete();
             boolean ok = false;
             for (String l : res) if (l != null && l.trim().equals("__DEPLOYED__")) ok = true;
@@ -667,27 +635,11 @@ public final class RootlessEngine {
         }
     }
 
-
-    /**
-     * Brings the agent up over the serial console, for when it is not up to be talked to.
-     *
-     * Everything the app does inside the guest goes through stryker-agentd on port 1050 —
-     * including deployGuestCore(), which installs the agent. That circularity means a guest
-     * whose agent never started cannot be fixed through the normal path: the VM boots, the
-     * console shows a root prompt, and the app waits for an agent that nothing is going to
-     * start. The console is already there and already root, so use it.
-     *
-     * Handles every way the agent ends up unusable: never unpacked, unpacked as a zero-byte file
-     * by a deploy that was verified against the wrong witness (see unpackAndVerify), socat absent
-     * so it exits on startup, or simply not running.
-     */
     public boolean bootstrapAgentOverConsole() {
         String sock = RootlessPaths.serialSock(app).getAbsolutePath();
         if (!new File(sock).exists()) return false;
 
         GuestExec.logToStore("guest agent unreachable — bootstrapping it over the serial console");
-        // deployGuestCore() removes the payload after itself, so put a fresh copy in the share
-        // before asking the console to unpack it.
         File staged = null;
         if (shareActive && shareInUse != null) {
             try {
@@ -700,8 +652,6 @@ public final class RootlessEngine {
 
         StringBuilder cmd = new StringBuilder();
         if (staged != null) {
-            // Re-extract unconditionally: the file on disk may exist, be executable, and still be
-            // empty, which is the state that produces 203/EXEC.
             cmd.append(unpackAndVerify("/sdcard/Stryker/" + STAGED_CORE)).append("; ");
         }
         cmd.append("command -v socat >/dev/null 2>&1 || (export DEBIAN_FRONTEND=noninteractive; ")
@@ -716,14 +666,12 @@ public final class RootlessEngine {
             if (l != null && l.contains("__AGENT_UP__")) up = true;
         }
         if (staged != null) {
-            //noinspection ResultOfMethodCallIgnored
             staged.delete();
         }
         if (up) {
             GuestExec.logToStore("guest agent started from the console");
             return true;
         }
-        // Nothing to lose by naming what is missing: the same console can tell us.
         for (String l : GuestConsole.run(
                 "printf 'agentd_bytes=%s socat=%s\\n' "
                 + "\"$(wc -c < /usr/local/sbin/stryker-agentd 2>/dev/null || echo missing)\" "
@@ -1062,11 +1010,8 @@ public final class RootlessEngine {
     }
 
     private static File withSubdirs(File base) {
-        //noinspection ResultOfMethodCallIgnored
         new File(base, "hs").mkdirs();
-        //noinspection ResultOfMethodCallIgnored
         new File(base, "captured").mkdirs();
-        //noinspection ResultOfMethodCallIgnored
         new File(base, "reports").mkdirs();
         return base;
     }

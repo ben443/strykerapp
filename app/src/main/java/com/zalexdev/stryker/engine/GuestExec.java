@@ -123,11 +123,6 @@ public final class GuestExec {
 
     private static final String PING_MARK = "__STRYKER_PONG__";
 
-    /**
-     * A bare TCP connect proves nothing here: QEMU's SLIRP hostfwd listener accepts on
-     * 127.0.0.1:1050 from the moment the VM process starts, long before anything inside the guest
-     * listens on that port. Readiness therefore has to be a round trip through the guest shell.
-     */
     public static boolean ping(int timeoutMs) {
         try (Socket sock = new Socket()) {
             sock.connect(new InetSocketAddress(RootlessPaths.HOST_LOOPBACK, RootlessPaths.HOST_EXEC_PORT),

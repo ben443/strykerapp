@@ -627,8 +627,6 @@ public class Dashboard extends Fragment {
             launchTerminal();
             return;
         }
-        // status() is non-blocking and goes stale on purpose, so confirm with a real probe before
-        // refusing — otherwise a healthy VM gets a "start the VM first" toast.
         new Thread(() -> {
             boolean ready = core.rootless().statusBlocking() == RootlessEngine.State.READY;
             if (activity == null) return;

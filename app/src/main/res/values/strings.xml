@@ -1226,7 +1226,6 @@ Storage is only consumed as the guest writes, and space freed inside the VM is r
     <string name="logs_saved">Saved to %1$s</string>
     <string name="logs_save_failed">Couldn\'t export logs.</string>
 
-    <!-- ===== Virtual machine (rootless engine) settings ===== -->
     <string name="settings_section_engine">Engine</string>
     <string name="settings_vm_title">Virtual machine</string>
     <string name="settings_vm_subtitle">Disk, CPU, RAM and speed tuning</string>
@@ -1343,4 +1342,8 @@ Storage is only consumed as the guest writes, and space freed inside the VM is r
     <string name="vm_stat_cpu">CPU load</string>
     <string name="vm_stat_ram">Memory</string>
     <string name="vm_stat_placeholder">—</string>
+
+    <string name="welcome_title">Welcome to StrykerOSS</string>
+    <string name="welcome_subtitle">The best way to pentest from your phone.</string>
+    <string name="welcome_cta">Let\'s start the journey</string>
 </resources>

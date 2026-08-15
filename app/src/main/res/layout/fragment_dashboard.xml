@@ -123,7 +123,6 @@
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
-        <!-- Rootless VM: collapsible status + console (shown only when the rootless engine is active) -->
         <com.google.android.material.card.MaterialCardView
             android:id="@+id/vm_card"
             android:layout_width="match_parent"

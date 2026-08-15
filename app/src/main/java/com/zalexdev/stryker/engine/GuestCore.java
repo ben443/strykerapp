@@ -70,7 +70,6 @@ public final class GuestCore {
                 + " -C " + Core.CHROOT_ROOT);
         core.customCommand("chmod -R 0755 " + Core.CHROOT_ROOT + "/CORE "
                 + Core.CHROOT_ROOT + "/exploits");
-        //noinspection ResultOfMethodCallIgnored
         staged.delete();
         return core.checkFile(Core.CHROOT_ROOT + MARKER);
     }

@@ -97,7 +97,6 @@
         <item name="android:textSize">12sp</item>
     </style>
 
-    <!-- ===== VM settings rows (settings_vm.xml) ===== -->
     <style name="VmRow">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>

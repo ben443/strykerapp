@@ -141,15 +141,6 @@ public class SlidePCheck extends Fragment {
         applyGate(rootOk);
     }
 
-    /**
-     * Decides what the button does once the checks are in.
-     *
-     * Everything past this slide — unpacking, mounting, apt — runs through a root shell, so
-     * without su the chroot install cannot get anywhere: it used to run anyway and die deep in
-     * the process with a reason invented from empty command output. The rootless VM engine needs
-     * no root, so offer that instead of a dead end; only when it is unsupported too is there
-     * genuinely nothing to continue to.
-     */
     private void applyGate(boolean rootOk) {
         switchToRootless = false;
         if (rootOk) {

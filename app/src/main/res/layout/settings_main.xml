@@ -34,7 +34,6 @@
             android:textColor="@color/grey"
             android:textSize="14sp" />
 
-        <!-- ENGINE (rootless VM) — shown only when the rootless engine is active -->
         <LinearLayout
             android:id="@+id/engine_section"
             android:layout_width="match_parent"

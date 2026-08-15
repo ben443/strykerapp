@@ -288,9 +288,6 @@ public class SettingsHomeFragment extends Fragment {
             });
             if (!detached) return;
 
-            // Guarded: this deletes the parent of the chroot, so a bind left attached anywhere
-            // underneath would be followed into the user's real storage. Stop before uninstalling
-            // if it refuses — an uninstall would leave the mount live with no way to clear it.
             if (!core.safeDeleteTree("/data/local/stryker")) {
                 ui(() -> {
                     setStep(s2, i2, l2, STEP_FAIL);
