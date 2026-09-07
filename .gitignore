@@ -68,3 +68,6 @@ CLAUDE.md
 /rootless/build-rootfs/out/
 /rootless/build-rootfs/out-minimal/
 /rootless/build-rootfs/files/**/__pycache__/
+
+/images/out/
+/images/work/

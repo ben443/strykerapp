@@ -31,6 +31,9 @@ import com.zalexdev.stryker.R;
 import com.zalexdev.stryker.custom.WiFINetwork;
 import com.zalexdev.stryker.handshakes.utils.BruteHandshake;
 import com.zalexdev.stryker.utils.Core;
+import com.zalexdev.stryker.wordlists.WordlistCategory;
+import com.zalexdev.stryker.wordlists.WordlistPickerDialog;
+import com.zalexdev.stryker.wordlists.WordlistStore;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -42,6 +45,8 @@ import java.util.regex.Pattern;
 public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.ViewHolder> {
 
     private static final Pattern MAC_PATTERN = Pattern.compile("((\\w{2}:){5}\\w{2})");
+
+    private static final String PREF_LAST_WORDLIST = "handshake_last_wordlist";
 
     public ArrayList<String> hslist;
     public Context context;
@@ -145,20 +150,14 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
     }
 
     private void startBrute(ViewHolder h, String path, String finalMac) {
-        ArrayList<String> get = core.getListFiles(core.getShareRoot() + "/wordlists");
-        if (get.isEmpty()) {
-            toaster(context.getString(R.string.hs_wordlist_empty));
-            return;
-        }
-        String[] names = new String[get.size()];
-        for (int i = 0; i < get.size(); i++) {
-            names[i] = get.get(i).replace(core.getShareRoot() + "/wordlists/", "");
-        }
-        new MaterialAlertDialogBuilder(context)
-                .setTitle(R.string.hs_wordlist_title)
-                .setItems(names, (di, idx) -> launchBrute(h, path, finalMac, get.get(idx)))
-                .setNegativeButton(R.string.cancel, null)
-                .show();
+        WordlistPickerDialog.show(context, activity, core,
+                context.getString(R.string.hs_wordlist_title),
+                new WordlistCategory[] { WordlistCategory.WIFI, WordlistCategory.PASSWORD },
+                core.getString(PREF_LAST_WORDLIST),
+                wordlist -> {
+                    core.putString(PREF_LAST_WORDLIST, wordlist.getName());
+                    launchBrute(h, path, finalMac, new WordlistStore(core).guestPathQuoted(wordlist));
+                });
     }
 
     private void launchBrute(ViewHolder h, String path, String finalMac, String wordlistPath) {
@@ -175,9 +174,8 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
         new Thread(() -> {
             try {
                 id++;
-                String capRel = path.replace(core.getShareRoot(), "/sdcard/Stryker");
-                String wlRel = wordlistPath.replace(core.getShareRoot(), "/sdcard/Stryker");
-                BruteHandshake br = new BruteHandshake(capRel, wlRel, core, activity, context, h.progress, h.timeLeft, id);
+                String capRel = path.replace(core.getShareRoot(), core.guestShare());
+                BruteHandshake br = new BruteHandshake(capRel, wordlistPath, core, activity, context, h.progress, h.timeLeft, id);
                 activity.runOnUiThread(() -> h.cancel.setOnClickListener(v -> {
                     br.kill();
                     h.cancel.setVisibility(View.GONE);
@@ -229,7 +227,9 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
             toaster("Uploading " + displayName);
             new Thread(() -> {
                 ArrayList<String> result = core.customChrootCommand(
-                        "curl -s -X POST -F \"email=" + email + "\" -F \"file=@/sdcard/Stryker/captured/" + displayName + "\" https://api.onlinehashcrack.com");
+                        "curl -s -X POST -F \"email=" + email + "\" -F \"file=@"
+                                + core.guestShare() + "/captured/" + displayName
+                                + "\" https://api.onlinehashcrack.com");
                 UploadResult outcome = parseUploadResult(result);
                 activity.runOnUiThread(() -> {
                     switch (outcome.outcome) {

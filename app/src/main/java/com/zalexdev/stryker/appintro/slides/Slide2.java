@@ -89,9 +89,7 @@ public class Slide2 extends Fragment {
         setPip(storageSpinner, storageStatus, true, false);
         setPip(batterySpinner, batteryStatus, true, false);
 
-        if (core.isRootless()) {
-            core.requestAllFilesAccess(activity);
-        }
+        core.requestAllFilesAccess(activity);
 
         new Thread(() -> {
             core.checkPermission(activity);
@@ -207,13 +205,7 @@ public class Slide2 extends Fragment {
     }
 
     private boolean storageGranted() {
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-            return Environment.isExternalStorageManager()
-                    || context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                    == PackageManager.PERMISSION_GRANTED;
-        }
-        return context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                == PackageManager.PERMISSION_GRANTED;
+        return core.hasAllFilesAccess();
     }
 
     private boolean batteryWhitelisted() {

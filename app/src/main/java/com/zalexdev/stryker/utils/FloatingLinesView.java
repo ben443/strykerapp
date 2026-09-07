@@ -476,6 +476,7 @@ public class FloatingLinesView extends TextureView
 
                 if (resize) applyScale(p, width, height);
                 if (!ensureProgram(p)) return;
+                holdBufferSize();
 
                 long frameStart = SystemClock.elapsedRealtimeNanos();
                 advanceClock(frameStart, p.speed);
@@ -573,7 +574,11 @@ public class FloatingLinesView extends TextureView
             float scale = SCALE_LADDER[ladderIndex];
             int bw = Math.max(2, Math.round(width * scale));
             int bh = Math.max(2, Math.round(height * scale));
-            if (bw == bufferWidth && bh == bufferHeight && eglSurface != EGL14.EGL_NO_SURFACE) return;
+            if (bw == bufferWidth && bh == bufferHeight && eglSurface != EGL14.EGL_NO_SURFACE) {
+                surfaceTexture.setDefaultBufferSize(bw, bh);
+                GLES20.glViewport(0, 0, bw, bh);
+                return;
+            }
 
             bufferWidth = bw;
             bufferHeight = bh;
@@ -587,6 +592,12 @@ public class FloatingLinesView extends TextureView
             surfaceTexture.setDefaultBufferSize(bw, bh);
             if (!createWindowSurface()) return;
             GLES20.glViewport(0, 0, bw, bh);
+        }
+
+        private void holdBufferSize() {
+            if (bufferWidth <= 0 || bufferHeight <= 0) return;
+            surfaceTexture.setDefaultBufferSize(bufferWidth, bufferHeight);
+            GLES20.glViewport(0, 0, bufferWidth, bufferHeight);
         }
 
         private boolean createWindowSurface() {

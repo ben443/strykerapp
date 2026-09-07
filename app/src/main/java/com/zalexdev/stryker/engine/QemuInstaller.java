@@ -123,12 +123,14 @@ public final class QemuInstaller {
 
             stage(p, Stage.FINALIZING);
             ensureMinimumDisk(context, p);
-            boolean ok = RootlessEngine.get(context).isInstalled();
+            GuestEngine target = Engines.active(new com.zalexdev.stryker.utils.Core(context));
+            boolean ok = target.isInstalled();
             if (ok) {
                 stage(p, Stage.DONE);
-                log(p, 2, "Rootless engine installed");
+                log(p, 2, target.displayName() + " installed");
             } else {
-                log(p, 3, "Post-install verification failed");
+                log(p, 3, "Post-install check failed, missing: "
+                        + android.text.TextUtils.join(", ", target.missing()));
             }
             return ok;
         } catch (Exception e) {
@@ -148,16 +150,23 @@ public final class QemuInstaller {
             }
             QemuDownloader.Bundle b = QemuDownloader.resolve(context);
 
-            stage(p, Stage.EXTRACTING_QEMU);
-            if (!fetch(b.qemu, RootlessPaths.qemuBin(context), "QEMU", p)) return false;
-            RootlessPaths.qemuBin(context).setExecutable(true, false);
+            EngineType engine = EngineType.active(new com.zalexdev.stryker.utils.Core(context));
+            boolean needsQemu = engine != EngineType.UML;
 
-            stage(p, Stage.EXTRACTING_KERNEL);
-            if (!fetch(b.kernel, RootlessPaths.kernel(context), "kernel", p)) return false;
-            if (!fetch(b.initrd, RootlessPaths.initrd(context), "initrd", p)) return false;
+            if (needsQemu) {
+                stage(p, Stage.EXTRACTING_QEMU);
+                if (!fetch(b.qemu, RootlessPaths.qemuBin(context), "QEMU", p)) return false;
+                RootlessPaths.qemuBin(context).setExecutable(true, false);
 
-            stage(p, Stage.EXTRACTING_LIBS);
-            if (!fetch(b.libslirp, RootlessPaths.libslirp(context), "libslirp.so", p)) return false;
+                stage(p, Stage.EXTRACTING_KERNEL);
+                if (!fetch(b.kernel, RootlessPaths.kernel(context), "kernel", p)) return false;
+                if (!fetch(b.initrd, RootlessPaths.initrd(context), "initrd", p)) return false;
+
+                stage(p, Stage.EXTRACTING_LIBS);
+                if (!fetch(b.libslirp, RootlessPaths.libslirp(context), "libslirp.so", p)) return false;
+            } else {
+                log(p, 1, "UML engine: the kernel ships in the app, only the disk image is needed");
+            }
 
             stage(p, Stage.DECOMPRESSING_ROOTFS);
             File rootfs = RootlessPaths.rootfs(context);
@@ -178,12 +187,14 @@ public final class QemuInstaller {
 
             stage(p, Stage.FINALIZING);
             ensureMinimumDisk(context, p);
-            boolean ok = RootlessEngine.get(context).isInstalled();
+            GuestEngine target = Engines.active(new com.zalexdev.stryker.utils.Core(context));
+            boolean ok = target.isInstalled();
             if (ok) {
                 stage(p, Stage.DONE);
-                log(p, 2, "Rootless engine installed");
+                log(p, 2, target.displayName() + " installed");
             } else {
-                log(p, 3, "Post-install verification failed");
+                log(p, 3, "Post-install check failed, missing: "
+                        + android.text.TextUtils.join(", ", target.missing()));
             }
             return ok;
         } catch (Exception e) {

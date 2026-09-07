@@ -153,7 +153,8 @@ public class SlideQemuInstall extends Fragment {
 
             setStatus(StatusKind.RUNNING, "Rootless engine", "Booting VM (first boot is slow)...");
             log(LogLevel.STEP, "Booting QEMU VM for the first time");
-            boolean booted = RootlessEngine.get(context).startBlocking(new RootlessEngine.BootListener() {
+            boolean booted = com.zalexdev.stryker.engine.Engines.active(core)
+                    .startBlocking(new RootlessEngine.BootListener() {
                 @Override public void onBootLine(String line) {
                     if (line != null && (line.contains("stryker") || line.contains("login")
                             || line.contains("Kernel panic") || line.contains("error"))) {

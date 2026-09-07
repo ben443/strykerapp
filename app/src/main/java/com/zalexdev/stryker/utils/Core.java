@@ -302,14 +302,32 @@ public class Core {
         }
     }
 
+    public String guestShare() {
+        if (isRootless()) return guest().guestSharePath();
+        return "/sdcard/Stryker";
+    }
+
     public String hostPath(String path) {
         if (path == null || path.isEmpty()) return null;
-        final String guestRoot = "/sdcard/Stryker";
-        if (path.startsWith(guestRoot)) return getShareRoot() + path.substring(guestRoot.length());
-        String legacyRoot = getStorage() + "Stryker";
-        if (path.startsWith(legacyRoot)) return getShareRoot() + path.substring(legacyRoot.length());
-        if (path.startsWith(getStorage())) return path;
-        return null;
+        String mapped = null;
+        String guestRoot = null;
+        for (String candidate : new String[]{"/sdcard/Stryker", "/host"}) {
+            if (path.equals(candidate) || path.startsWith(candidate + "/")) {
+                guestRoot = candidate;
+                break;
+            }
+        }
+        if (guestRoot != null) {
+            mapped = getShareRoot() + path.substring(guestRoot.length());
+        } else {
+            String legacyRoot = getStorage() + "Stryker";
+            if (path.startsWith(legacyRoot)) {
+                mapped = getShareRoot() + path.substring(legacyRoot.length());
+            } else if (path.startsWith(getStorage())) {
+                mapped = path;
+            }
+        }
+        return reachableByApp(mapped) ? mapped : null;
     }
 
     public ArrayList<String> getListFiles(String parentDir) {
@@ -357,7 +375,7 @@ public class Core {
     }
     public void updateExploits(){
         customChrootCommand("rm -rf /exploits; mkdir -p /exploits; "
-                + "cp -f /sdcard/Stryker/exploits/* /exploits/ 2>/dev/null; "
+                + "cp -f " + guestShare() + "/exploits/* /exploits/ 2>/dev/null; "
                 + "chmod -R 0755 /exploits", true);
     }
 
@@ -454,10 +472,32 @@ public class Core {
 
     public String getShareRoot() {
         if (isRootless()) {
-            File d = rootless().resolveShareDir();
+            File d = guest().shareDir();
             if (d != null) return d.getAbsolutePath();
+            File ext = context.getExternalFilesDir(null);
+            if (ext != null) return new File(ext, "Stryker").getAbsolutePath();
         }
         return getStorage() + "Stryker";
+    }
+
+    public boolean hasAllFilesAccess() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                return android.os.Environment.isExternalStorageManager();
+            }
+            return context.checkSelfPermission(WRITE_EXTERNAL_STORAGE)
+                    == PackageManager.PERMISSION_GRANTED;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private boolean reachableByApp(String path) {
+        if (path == null) return false;
+        if (!path.startsWith(getStorage())) return true;
+        if (hasAllFilesAccess()) return true;
+        File ext = context.getExternalFilesDir(null);
+        return ext != null && path.startsWith(ext.getAbsolutePath());
     }
     public final static String PIXIE_HEURISTIC_ASSET = "routes.txt";
     public final static String PIXIE_VERIFIED_ASSET = "pixie_verified.txt";
@@ -1050,11 +1090,15 @@ public class Core {
         return RootlessEngine.get(context);
     }
 
+    public com.zalexdev.stryker.engine.GuestEngine guest() {
+        return com.zalexdev.stryker.engine.Engines.active(this);
+    }
+
     public ArrayList<String> customChrootCommand(String command)  {
         if (isRootless()) {
             String tool = LogTool.classify(command);
             logger.writeLine("Executing rootless command: " + command, 1, tool);
-            ArrayList<String> out = rootless().exec(command);
+            ArrayList<String> out = guest().exec(command);
             for (String l : out) logger.writeLine(l, 2, tool);
             return out;
         }
@@ -1066,7 +1110,7 @@ public class Core {
 
     public ArrayList<String> customChrootCommand(String command, boolean nolog)  {
         if (isRootless()) {
-            return rootless().exec(command);
+            return guest().exec(command);
         }
         return pumpProcess(generateSuProcess(),
                 EXECUTE + "'" + SHELL + "'\n" + terminated(command) + "exit\n", false, null, false);
@@ -1329,6 +1373,7 @@ public class Core {
 
     public static String generateString() {return UUID.randomUUID().toString().replace("-", "");}
     public void checkPermission(Activity activity) {
+        if (Build.VERSION.SDK_INT > Build.VERSION_CODES.Q) return;
         if (context.checkSelfPermission(WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(
                     activity,
@@ -1348,16 +1393,20 @@ public class Core {
     }
 
     public void requestLocationPermission(Activity activity) {
-        if (activity == null || hasLocationPermission()) return;
+        if (activity == null) return;
         try {
-            ActivityCompat.requestPermissions(
-                    activity,
-                    new String[]{
-                            android.Manifest.permission.ACCESS_FINE_LOCATION,
-                            android.Manifest.permission.ACCESS_COARSE_LOCATION
-                    },
-                    124
-            );
+            ArrayList<String> wanted = new ArrayList<>();
+            if (!hasLocationPermission()) {
+                wanted.add(android.Manifest.permission.ACCESS_FINE_LOCATION);
+                wanted.add(android.Manifest.permission.ACCESS_COARSE_LOCATION);
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                    && context.checkSelfPermission(android.Manifest.permission.NEARBY_WIFI_DEVICES)
+                    != PackageManager.PERMISSION_GRANTED) {
+                wanted.add(android.Manifest.permission.NEARBY_WIFI_DEVICES);
+            }
+            if (wanted.isEmpty()) return;
+            ActivityCompat.requestPermissions(activity, wanted.toArray(new String[0]), 124);
         } catch (Exception ignored) {
         }
     }
@@ -1365,7 +1414,7 @@ public class Core {
     public void requestAllFilesAccess(Activity activity) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                if (!android.os.Environment.isExternalStorageManager()) {
+                if (!hasAllFilesAccess()) {
                     Intent i = new Intent(
                             android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
                             Uri.parse("package:" + context.getPackageName()));

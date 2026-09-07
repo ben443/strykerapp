@@ -33,6 +33,8 @@ import com.zalexdev.stryker.MainActivity;
 import com.zalexdev.stryker.R;
 import com.zalexdev.stryker.arsenal.ArsenalFragment;
 import com.zalexdev.stryker.engine.EngineStatus;
+import com.zalexdev.stryker.engine.Engines;
+import com.zalexdev.stryker.engine.GuestEngine;
 import com.zalexdev.stryker.engine.RootlessEngine;
 import com.zalexdev.stryker.engine.RootlessService;
 import com.zalexdev.stryker.engine.VmBootStage;
@@ -58,7 +60,7 @@ public class Dashboard extends Fragment {
     private Core core;
     private final MainActivity.Receiver receiver = new MainActivity.Receiver();
 
-    private RootlessEngine vmEngine;
+    private GuestEngine vmEngine;
     private View vmCard;
     private TextView vmBadge, vmSpecs, vmUsb, vmStatusChevron, vmLogsChevron, vmLogText;
     private android.widget.ScrollView vmLogScroll;
@@ -72,6 +74,17 @@ public class Dashboard extends Fragment {
     private Runnable vmTick;
     private VmStatsCollector vmCollector;
     private TextView vmStatsChevron, vmStatsSummary, vmUsbChevron, vmUsbDetails;
+    private MaterialButton vmUsbManage;
+    private com.zalexdev.stryker.utils.AuroraView vmAurora;
+    private final java.util.Map<TextView, Integer> vmCardTextColors = new java.util.HashMap<>();
+    private final java.util.Map<View, android.graphics.drawable.Drawable> vmCardBackgrounds =
+            new java.util.HashMap<>();
+    private GuestEngine.State lastAuroraState;
+
+    private int vmCardForeground;
+    private final java.util.HashMap<android.widget.ImageView, android.content.res.ColorStateList>
+            vmCardIconTints = new java.util.HashMap<>();
+    private boolean auroraLight;
     private ExpandableLayout vmStatsExpand, vmUsbExpand;
     private ExecutorService vmStatsExec;
     private final AtomicBoolean vmSampling = new AtomicBoolean(false);
@@ -162,8 +175,9 @@ public class Dashboard extends Fragment {
                     Snackbar s = Snackbar.make(activity.findViewById(android.R.id.content), "Updating please wait...", 60000);
                     activity.runOnUiThread(s::show);
                     com.zalexdev.stryker.engine.GuestCore.ensure(core);
-                    core.customChrootCommand("mkdir -p /sdcard/Stryker/exploits; "
-                            + "cp -f /exploits/* /sdcard/Stryker/exploits/ 2>/dev/null", true);
+                    String guestShare = core.guestShare();
+                    core.customChrootCommand("mkdir -p " + guestShare + "/exploits; "
+                            + "cp -f /exploits/* " + guestShare + "/exploits/ 2>/dev/null", true);
                     activity.runOnUiThread(s::dismiss);
                     core.putListString("installed_modules", new ArrayList<>());
                 }
@@ -189,6 +203,9 @@ public class Dashboard extends Fragment {
         vmStatusChevron = view.findViewById(R.id.vm_status_chevron);
         vmStatusExpand = view.findViewById(R.id.vm_status_expand);
         vmRing = view.findViewById(R.id.vm_ring);
+        if (vmRing != null) {
+            vmRing.setRingEnabled(false);
+        }
 
         if (!core.isRootless()) {
             if (cardTitle != null) cardTitle.setText("Chroot engine");
@@ -207,8 +224,8 @@ public class Dashboard extends Fragment {
             vmStatusChevron.setText(vmStatusExpand.isExpanded() ? "▾" : "▸");
         });
 
-        if (cardTitle != null) cardTitle.setText("Rootless VM");
-        vmEngine = core.rootless();
+        vmEngine = Engines.active(core);
+        if (cardTitle != null) cardTitle.setText(vmEngine.displayName());
         vmCollector = VmStatsCollector.get(context);
         vmCollector.start();
 
@@ -223,6 +240,19 @@ public class Dashboard extends Fragment {
         vmUsbChevron = view.findViewById(R.id.vm_usb_chevron);
         vmUsbExpand = view.findViewById(R.id.vm_usb_expand);
         vmUsbDetails = view.findViewById(R.id.vm_usb_details);
+        vmUsbManage = view.findViewById(R.id.vm_usb_manage);
+        vmAurora = view.findViewById(R.id.vm_aurora);
+        if (vmAurora != null) {
+            vmAurora.setGlow(0.0032f);
+            vmAurora.setPillarWidth(10f);
+            vmAurora.setPillarHeight(0.6f);
+            vmAurora.setNoise(0.35f);
+            int night = getResources().getConfiguration().uiMode
+                    & android.content.res.Configuration.UI_MODE_NIGHT_MASK;
+            auroraLight = night != android.content.res.Configuration.UI_MODE_NIGHT_YES;
+            applyAuroraState(null);
+        }
+        if (vmUsbManage != null) vmUsbManage.setOnClickListener(v -> showUsbPicker());
 
         vmLogsChevron = view.findViewById(R.id.vm_logs_chevron);
         vmLogText = view.findViewById(R.id.vm_log_text);
@@ -267,6 +297,7 @@ public class Dashboard extends Fragment {
             }, "vm-stop").start();
         });
         view.findViewById(R.id.vm_btn_refresh_log).setOnClickListener(v -> refreshVmLog());
+        view.findViewById(R.id.vm_btn_copy_log).setOnClickListener(v -> copyVmLog());
 
         vmTick = () -> {
             refreshVmStatus();
@@ -292,25 +323,25 @@ public class Dashboard extends Fragment {
 
     private void sampleVmStats() {
         final VmStatsCollector collector = vmCollector;
-        final RootlessEngine engine = vmEngine;
+        final GuestEngine engine = vmEngine;
         ExecutorService exec = vmStatsExec;
         if (collector == null || engine == null || exec == null || exec.isShutdown()) return;
         if (!vmSampling.compareAndSet(false, true)) return;
         final boolean full = vmStatsExpand != null && vmStatsExpand.isExpanded();
         try {
             exec.execute(() -> {
-                RootlessEngine.State state = RootlessEngine.State.STOPPED;
+                GuestEngine.State state = GuestEngine.State.STOPPED;
                 int stage = -1;
                 VmStatsCollector.Series series = null;
                 try {
                     state = engine.statusBlocking();
-                    if (state == RootlessEngine.State.BOOTING) {
-                        stage = VmBootStage.detect(engine.tailLog(120));
+                    if (state == GuestEngine.State.BOOTING) {
+                        stage = VmBootStage.detect(engine.consoleTail(120));
                     }
                     series = collector.snapshot(full ? 160 : 8);
                 } catch (Throwable ignored) {
                 }
-                final RootlessEngine.State finalState = state;
+                final GuestEngine.State finalState = state;
                 final int finalStage = stage;
                 final VmStatsCollector.Series finalSeries = series;
                 Activity host = activity;
@@ -329,9 +360,9 @@ public class Dashboard extends Fragment {
         }
     }
 
-    private void renderRing(RootlessEngine.State state, int stage) {
+    private void renderRing(GuestEngine.State state, int stage) {
         if (vmRing == null) return;
-        if (state == RootlessEngine.State.BOOTING) {
+        if (state == GuestEngine.State.BOOTING) {
             vmRing.setState(VmRingView.STATE_BOOTING);
             vmRing.setProgress(stage >= 0 ? VmBootStage.fraction(stage) : -1f);
             if (vmBadge != null && stage >= 0 && context != null) {
@@ -340,7 +371,7 @@ public class Dashboard extends Fragment {
             return;
         }
         vmRing.setProgress(-1f);
-        vmRing.setState(state == RootlessEngine.State.READY
+        vmRing.setState(state == GuestEngine.State.READY
                 ? VmRingView.STATE_READY : VmRingView.STATE_STOPPED);
     }
 
@@ -374,28 +405,160 @@ public class Dashboard extends Fragment {
         return context.getString(R.string.vm_stats_waiting);
     }
 
+    private void setCardLit(boolean lit) {
+        if (vmAurora == null) return;
+        vmAurora.setVisibility(lit ? View.VISIBLE : View.GONE);
+        View card = getView() == null ? null : getView().findViewById(R.id.vm_card);
+        if (!(card instanceof ViewGroup)) return;
+        if (lit) {
+            tintForDarkGround((ViewGroup) card);
+        } else {
+            restoreCardColors();
+        }
+    }
+
+    private void restoreCardColors() {
+        for (java.util.Map.Entry<TextView, Integer> e : vmCardTextColors.entrySet()) {
+            e.getKey().setTextColor(e.getValue());
+        }
+        vmCardTextColors.clear();
+        for (java.util.Map.Entry<View, android.graphics.drawable.Drawable> e
+                : vmCardBackgrounds.entrySet()) {
+            e.getKey().setBackground(e.getValue());
+        }
+        vmCardBackgrounds.clear();
+        for (java.util.Map.Entry<android.widget.ImageView, android.content.res.ColorStateList> e
+                : vmCardIconTints.entrySet()) {
+            e.getKey().setImageTintList(e.getValue());
+        }
+        vmCardIconTints.clear();
+        vmCardForeground = 0;
+    }
+
+    private void tintForDarkGround(ViewGroup group) {
+        for (int i = 0; i < group.getChildCount(); i++) {
+            View child = group.getChildAt(i);
+            if (child instanceof com.zalexdev.stryker.utils.AuroraView) continue;
+            if (child instanceof ViewGroup) {
+                tintForDarkGround((ViewGroup) child);
+                continue;
+            }
+            if (child instanceof TextView) {
+                TextView tv = (TextView) child;
+                Integer original = vmCardTextColors.get(tv);
+                int c = original != null ? original : tv.getCurrentTextColor();
+                if (luminance(c) < 0.72f) {
+                    if (!vmCardTextColors.containsKey(tv)) vmCardTextColors.put(tv, c);
+                    tv.setTextColor(luminance(c) < 0.22f ? 0xFFFFFFFF
+                            : (vmCardForeground != 0 ? vmCardForeground : 0xFFDDE4EC));
+                }
+                continue;
+            }
+            if (child instanceof android.widget.ImageView) {
+                android.widget.ImageView iv = (android.widget.ImageView) child;
+                if (!vmCardIconTints.containsKey(iv)) {
+                    vmCardIconTints.put(iv, iv.getImageTintList());
+                }
+                if (vmCardForeground != 0) {
+                    iv.setImageTintList(android.content.res.ColorStateList.valueOf(vmCardForeground));
+                }
+                continue;
+            }
+            android.view.ViewGroup.LayoutParams lp = child.getLayoutParams();
+            if (lp != null && lp.height > 0 && lp.height <= dp(3)) {
+                if (!vmCardBackgrounds.containsKey(child)) {
+                    vmCardBackgrounds.put(child, child.getBackground());
+                }
+                child.setBackgroundColor(0x22FFFFFF);
+            }
+        }
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private static float luminance(int color) {
+        float r = ((color >> 16) & 0xFF) / 255f;
+        float g = ((color >> 8) & 0xFF) / 255f;
+        float b = (color & 0xFF) / 255f;
+        return 0.2126f * r + 0.7152f * g + 0.0722f * b;
+    }
+
+    private void applyAuroraState(GuestEngine.State state) {
+        if (vmAurora == null) return;
+        if (lastAuroraState == state && state != null) return;
+        lastAuroraState = state;
+        if (state == null || state == GuestEngine.State.STOPPED) {
+            setCardLit(false);
+            if (vmRing != null) {
+                try {
+                    vmRing.setTileColor(androidx.core.content.ContextCompat.getColor(
+                            context, R.color.light_lite_contrast));
+                    vmRing.setGlyphTint(androidx.core.content.ContextCompat.getColor(
+                            context, R.color.grey));
+                } catch (Exception ignored) {
+                }
+            }
+            if (vmBadge != null && state != null) {
+                try {
+                    vmBadge.setTextColor(androidx.core.content.ContextCompat.getColor(
+                            context, R.color.grey));
+                } catch (Exception ignored) {
+                }
+            }
+            return;
+        }
+
+        int light, ground;
+        float intensity, speed;
+        int fg;
+        if (state == GuestEngine.State.READY) {
+            light = auroraLight ? 0xFF34D399 : 0xFF0B8F63;
+            ground = auroraLight ? 0xFF047857 : 0xFF04120C;
+            intensity = auroraLight ? 0.26f : 0.45f;
+            speed = 0.30f;
+            fg = 0xFFB8F2C9;
+        } else {
+            light = auroraLight ? 0xFFFBBF24 : 0xFFC47A1E;
+            ground = auroraLight ? 0xFF8A5A0E : 0xFF150E02;
+            intensity = auroraLight ? 0.24f : 0.42f;
+            speed = 0.65f;
+            fg = 0xFFFFDFA0;
+        }
+        vmCardForeground = fg;
+        vmAurora.setColors(light, light, ground);
+        vmAurora.setIntensity(intensity);
+        vmAurora.setSpeed(speed);
+        setCardLit(true);
+        if (vmRing != null) {
+            vmRing.setTileColor(0x40000000);
+            vmRing.setGlyphTint(0xFFFFFFFF);
+        }
+        if (vmBadge != null && state != null) vmBadge.setTextColor(fg);
+    }
+
     private void refreshUsb() {
         if (vmUsb == null || context == null) return;
-        final RootlessEngine engine = vmEngine;
+        final GuestEngine engine = vmEngine;
         new Thread(() -> {
             final StringBuilder details = new StringBuilder();
             int attached = 0;
             int total = 0;
             try {
-                android.hardware.usb.UsbManager um = (android.hardware.usb.UsbManager)
-                        context.getSystemService(Context.USB_SERVICE);
-                com.zalexdev.stryker.engine.UsbPassthroughManager usb =
-                        engine == null ? null : engine.usb();
-                if (um != null) {
-                    for (android.hardware.usb.UsbDevice d : um.getDeviceList().values()) {
-                        total++;
-                        boolean live = usb != null && usb.isAttached(d);
-                        if (live) attached++;
-                        details.append(live ? "● " : "○ ").append(describeUsb(d));
-                        details.append("  ").append(context.getString(live
-                                ? R.string.vm_usb_attached_to_vm : R.string.vm_usb_host_only));
-                        details.append('\n');
-                    }
+                com.zalexdev.stryker.engine.GuestUsb usb = engine == null ? null : engine.usb();
+                java.util.List<android.hardware.usb.UsbDevice> devs = usb != null
+                        ? usb.devices() : java.util.Collections.emptyList();
+                for (android.hardware.usb.UsbDevice d : devs) {
+                    total++;
+                    boolean live = usb.isAttached(d);
+                    if (live) attached++;
+                    details.append(live ? "● " : "○ ").append(describeUsb(d));
+                    details.append("  ").append(context.getString(live
+                            ? R.string.vm_usb_attached_to_vm : R.string.vm_usb_host_only));
+                    String detail = live ? usb.attachmentDetail(d) : "";
+                    if (!detail.isEmpty()) details.append("\n    ").append(detail);
+                    details.append('\n');
                 }
             } catch (Throwable ignored) {
             }
@@ -415,12 +578,78 @@ public class Dashboard extends Fragment {
                     summary = finalTotal + " · " + context.getString(R.string.vm_usb_host_only);
                 }
                 vmUsb.setText(summary);
+                if (vmUsbManage != null) {
+                    boolean can = engine != null && finalTotal > 0
+                            && engine.supports(GuestEngine.Capability.USB_PASSTHROUGH);
+                    vmUsbManage.setVisibility(can ? View.VISIBLE : View.GONE);
+                }
                 if (vmUsbDetails != null) {
                     vmUsbDetails.setText(details.length() == 0
                             ? context.getString(R.string.vm_usb_none) : details.toString().trim());
                 }
             });
         }, "vm-usb-scan").start();
+    }
+
+    private void showUsbPicker() {
+        final GuestEngine engine = vmEngine;
+        final Activity host = activity;
+        if (engine == null || host == null || context == null) return;
+        final com.zalexdev.stryker.engine.GuestUsb usb = engine.usb();
+        if (usb == null) return;
+
+        final java.util.List<android.hardware.usb.UsbDevice> devs = usb.devices();
+        if (devs.isEmpty()) return;
+
+        CharSequence[] labels = new CharSequence[devs.size()];
+        for (int i = 0; i < devs.size(); i++) {
+            android.hardware.usb.UsbDevice d = devs.get(i);
+            boolean live = usb.isAttached(d);
+            String detail = live ? usb.attachmentDetail(d) : "";
+            labels[i] = (live ? "● " : "○ ") + describeUsb(d)
+                    + (detail.isEmpty() ? "" : "\n    " + detail);
+        }
+
+        new MaterialAlertDialogBuilder(host)
+                .setTitle(R.string.vm_usb_pick_title)
+                .setItems(labels, (dialog, which) -> {
+                    android.hardware.usb.UsbDevice d = devs.get(which);
+                    if (usb.isAttached(d)) {
+                        toast(getString(R.string.vm_usb_detaching, describeUsb(d)));
+                        new Thread(() -> {
+                            usb.detach(d);
+                            postRefreshUsb();
+                        }, "usb-detach").start();
+                        return;
+                    }
+                    if (!engine.isRunning()) {
+                        toast(getString(R.string.vm_usb_needs_guest));
+                        return;
+                    }
+                    toast(getString(R.string.vm_usb_attaching, describeUsb(d)));
+                    usb.attachAsync(d, (ok, dev) -> {
+                        Activity a = activity;
+                        if (a == null) return;
+                        a.runOnUiThread(() -> toast(getString(ok
+                                ? R.string.vm_usb_attach_ok
+                                : R.string.vm_usb_attach_failed, describeUsb(d))));
+                        postRefreshUsb();
+                    });
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void toast(String text) {
+        Activity host = activity;
+        if (host == null) return;
+        Snackbar.make(host.findViewById(android.R.id.content), text, Snackbar.LENGTH_LONG).show();
+    }
+
+    private void postRefreshUsb() {
+        Activity host = activity;
+        if (host == null) return;
+        host.runOnUiThread(this::refreshUsb);
     }
 
     private static String describeUsb(android.hardware.usb.UsbDevice d) {
@@ -442,7 +671,7 @@ public class Dashboard extends Fragment {
     @SuppressLint("SetTextI18n")
     private void refreshVmStatus() {
         if (vmEngine == null || vmBadge == null) return;
-        RootlessEngine.State st = vmEngine.status();
+        GuestEngine.State st = vmEngine.status();
         String badge;
         int color, ring;
         switch (st) {
@@ -461,25 +690,34 @@ public class Dashboard extends Fragment {
                 badge = "Stopped"; color = R.color.grey;
                 ring = VmRingView.STATE_STOPPED; break;
         }
-        if (vmRing != null && st != RootlessEngine.State.BOOTING) {
+        if (vmRing != null && st != GuestEngine.State.BOOTING) {
             vmRing.setProgress(-1f);
             vmRing.setState(ring);
         }
-        if (st != RootlessEngine.State.BOOTING) vmBadge.setText(badge);
-        try { vmBadge.setTextColor(androidx.core.content.ContextCompat.getColor(context, color)); } catch (Exception ignored) {}
+        applyAuroraState(st);
+        if (st != GuestEngine.State.BOOTING) vmBadge.setText(badge);
+        if (vmCardForeground != 0) {
+            vmBadge.setTextColor(vmCardForeground);
+        } else {
+            try { vmBadge.setTextColor(androidx.core.content.ContextCompat.getColor(context, color)); } catch (Exception ignored) {}
+        }
 
         int cpus = com.zalexdev.stryker.engine.VmSpecs.effectiveCpus(context, core);
         int ram = com.zalexdev.stryker.engine.VmSpecs.effectiveRamMb(context, core);
         String disk = com.zalexdev.stryker.engine.VmSpecs.humanBytes(
                 com.zalexdev.stryker.engine.VmSpecs.diskAllocatedBytes(context));
-        boolean kvm = com.zalexdev.stryker.engine.VmSpecs.kvmAvailable();
-        vmSpecs.setText(cpus + " vCPU · " + ram + " MB · " + disk + " disk · " + (kvm ? "KVM" : "TCG"));
+        boolean uml = vmEngine != null && vmEngine.type() == com.zalexdev.stryker.engine.EngineType.UML;
+        String how = uml
+                ? "native"
+                : (com.zalexdev.stryker.engine.VmSpecs.kvmAvailable() ? "KVM" : "TCG");
+        vmSpecs.setText(cpus + (uml ? " CPU · " : " vCPU · ") + ram + " MB · " + disk
+                + " disk · " + how);
     }
 
     private void refreshVmLog() {
         if (vmEngine == null || vmLogText == null) return;
         new Thread(() -> {
-            List<String> lines = vmEngine.tailLog(400);
+            List<String> lines = vmEngine.consoleTail(400);
             final StringBuilder sb = new StringBuilder();
             for (String l : lines) sb.append(l).append('\n');
             final String text = sb.length() == 0 ? "(no console output yet)" : sb.toString();
@@ -487,6 +725,34 @@ public class Dashboard extends Fragment {
             if (host == null) return;
             host.runOnUiThread(() -> applyVmLog(text));
         }, "vm-log-tail").start();
+    }
+
+    private void copyVmLog() {
+        final GuestEngine engine = vmEngine;
+        if (engine == null || context == null) return;
+        new Thread(() -> {
+            List<String> lines = engine.consoleTail(5000);
+            final StringBuilder sb = new StringBuilder();
+            for (String l : lines) sb.append(l).append('\n');
+            final int count = lines.size();
+            Activity host = activity;
+            if (host == null) return;
+            host.runOnUiThread(() -> {
+                if (context == null) return;
+                if (count == 0) {
+                    toast(getString(R.string.vm_log_copy_empty));
+                    return;
+                }
+                android.content.ClipboardManager cb = (android.content.ClipboardManager)
+                        context.getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cb == null) return;
+                cb.setPrimaryClip(android.content.ClipData.newPlainText(
+                        engine.displayName() + " boot console", sb.toString()));
+                if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.TIRAMISU) {
+                    toast(getString(R.string.vm_log_copied, count));
+                }
+            });
+        }, "vm-log-copy").start();
     }
 
     private void applyVmLog(String text) {
@@ -531,9 +797,13 @@ public class Dashboard extends Fragment {
                     vmRing.setState(mounted ? VmRingView.STATE_READY : VmRingView.STATE_STOPPED);
                 }
                 vmBadge.setText(es.label);
-                try {
-                    vmBadge.setTextColor(androidx.core.content.ContextCompat.getColor(context, es.colorRes));
-                } catch (Exception ignored) {}
+                if (vmCardForeground != 0) {
+                    vmBadge.setTextColor(vmCardForeground);
+                } else {
+                    try {
+                        vmBadge.setTextColor(androidx.core.content.ContextCompat.getColor(context, es.colorRes));
+                    } catch (Exception ignored) {}
+                }
                 if (vmSpecs != null) {
                     vmSpecs.setText(mounted
                             ? "Debian toolset at " + Core.CHROOT_ROOT
@@ -580,6 +850,8 @@ public class Dashboard extends Fragment {
         vmUsbExpand = null;
         vmStatsSummary = null;
         vmUsbDetails = null;
+        vmUsbManage = null;
+        vmAurora = null;
         vmLogScroll = null;
         lastVmLog = null;
         vmRing = null;
@@ -623,12 +895,12 @@ public class Dashboard extends Fragment {
             launchTerminal();
             return;
         }
-        if (core.rootless().status() == RootlessEngine.State.READY) {
+        if (core.rootless().status() == GuestEngine.State.READY) {
             launchTerminal();
             return;
         }
         new Thread(() -> {
-            boolean ready = core.rootless().statusBlocking() == RootlessEngine.State.READY;
+            boolean ready = core.rootless().statusBlocking() == GuestEngine.State.READY;
             if (activity == null) return;
             activity.runOnUiThread(() -> {
                 if (!isAdded()) return;

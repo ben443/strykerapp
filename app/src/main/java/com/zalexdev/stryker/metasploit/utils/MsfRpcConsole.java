@@ -40,7 +40,7 @@ public class MsfRpcConsole {
     private final String label;
 
     private volatile Process process;
-    private volatile Socket socket;
+    private volatile com.jcraft.jsch.ChannelShell channel;
     private volatile OutputStream stdin;
     private volatile BufferedReader stdout;
     private volatile boolean eof;
@@ -119,7 +119,7 @@ public class MsfRpcConsole {
                 }
                 return line;
             } catch (java.net.SocketTimeoutException idle) {
-                if (socket == null || socket.isClosed()) {
+                if (channel == null || !channel.isConnected()) {
                     eof = true;
                     return null;
                 }
@@ -159,22 +159,19 @@ public class MsfRpcConsole {
             }
         }
         try {
-            Socket s = new Socket();
-            s.connect(new InetSocketAddress(RootlessPaths.HOST_LOOPBACK, RootlessPaths.HOST_EXEC_PORT),
-                    GUEST_CONNECT_TIMEOUT_MS);
-            s.setKeepAlive(true);
-            s.setSoTimeout(GUEST_READ_SLICE_MS);
-            socket = s;
-            stdin = s.getOutputStream();
-            stdout = new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8));
+            com.jcraft.jsch.ChannelShell c = com.zalexdev.stryker.engine.GuestSsh.interactiveShell();
+            stdin = c.getOutputStream();
+            stdout = new BufferedReader(new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8));
+            c.connect(GUEST_CONNECT_TIMEOUT_MS);
+            channel = c;
             stdin.write(GUEST_ENV.getBytes(StandardCharsets.UTF_8));
             stdin.flush();
             stdin.write(GUEST_LAUNCH.getBytes(StandardCharsets.UTF_8));
             stdin.flush();
             return null;
-        } catch (IOException e) {
+        } catch (Exception e) {
             Log.e(TAG, label + " guest channel failed", e);
-            return "VM unreachable on :" + RootlessPaths.HOST_EXEC_PORT;
+            return "guest unreachable over ssh on :" + RootlessPaths.HOST_SSH_PORT;
         }
     }
 
@@ -238,7 +235,7 @@ public class MsfRpcConsole {
 
     public boolean isProcessAlive() {
         if (eof) return false;
-        if (socket != null) return !socket.isClosed();
+        if (channel != null) return channel.isConnected();
         if (process == null) return false;
         try {
             process.exitValue();
@@ -251,14 +248,14 @@ public class MsfRpcConsole {
     private void teardown(String why) {
         try { if (stdin != null) stdin.close(); } catch (IOException ignored) {}
         try { if (stdout != null) stdout.close(); } catch (IOException ignored) {}
-        if (socket != null) {
-            try { socket.close(); } catch (IOException ignored) {}
+        if (channel != null) {
+            try { channel.disconnect(); } catch (Exception ignored) {}
         }
         if (process != null) {
             try { process.destroy(); } catch (Exception ignored) {}
         }
         process = null;
-        socket = null;
+        channel = null;
         stdin = null;
         stdout = null;
         eof = false;

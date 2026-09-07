@@ -671,7 +671,8 @@ public class BluetoothAudioManager {
         f.addAction(AudioManager.ACTION_SCO_AUDIO_STATE_UPDATED);
         f.addAction(BluetoothHeadset.ACTION_CONNECTION_STATE_CHANGED);
         f.addAction(BluetoothHeadset.ACTION_AUDIO_STATE_CHANGED);
-        context.registerReceiver(scoReceiver, f);
+        androidx.core.content.ContextCompat.registerReceiver(context, scoReceiver, f,
+                androidx.core.content.ContextCompat.RECEIVER_EXPORTED);
     }
 
     private void unregisterScoReceiver() {

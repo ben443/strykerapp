@@ -135,6 +135,11 @@
             app:strokeColor="@color/light_lite_contrast"
             app:strokeWidth="1dp">
 
+            <com.zalexdev.stryker.utils.AuroraView
+                android:id="@+id/vm_aurora"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -442,15 +447,34 @@
                     android:layout_height="wrap_content"
                     app:el_expanded="false">
 
-                    <com.google.android.material.textview.MaterialTextView
-                        android:id="@+id/vm_usb_details"
+                    <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:lineSpacingExtra="2dp"
-                        android:paddingBottom="12dp"
-                        android:text="@string/vm_usb_none"
-                        android:textColor="@color/grey"
-                        android:textSize="12sp" />
+                        android:orientation="vertical">
+
+                        <com.google.android.material.textview.MaterialTextView
+                            android:id="@+id/vm_usb_details"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:lineSpacingExtra="2dp"
+                            android:text="@string/vm_usb_none"
+                            android:textColor="@color/grey"
+                            android:textSize="12sp" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/vm_usb_manage"
+                            style="@style/Widget.Material3.Button.TextButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="4dp"
+                            android:layout_marginBottom="8dp"
+                            android:minHeight="0dp"
+                            android:paddingTop="6dp"
+                            android:paddingBottom="6dp"
+                            android:text="@string/vm_usb_manage"
+                            android:textSize="12sp"
+                            android:visibility="gone" />
+                    </LinearLayout>
                 </net.cachapa.expandablelayout.ExpandableLayout>
 
                 <View
@@ -538,15 +562,33 @@
                             </ScrollView>
                         </LinearLayout>
 
-                        <com.google.android.material.button.MaterialButton
-                            android:id="@+id/vm_btn_refresh_log"
-                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        <LinearLayout
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:layout_marginTop="8dp"
-                            android:text="Refresh"
-                            android:textSize="12sp"
-                            app:cornerRadius="12dp" />
+                            android:orientation="horizontal">
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/vm_btn_refresh_log"
+                                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_marginEnd="6dp"
+                                android:layout_weight="1"
+                                android:text="Refresh"
+                                android:textSize="12sp"
+                                app:cornerRadius="12dp" />
+
+                            <com.google.android.material.button.MaterialButton
+                                android:id="@+id/vm_btn_copy_log"
+                                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                                android:layout_width="0dp"
+                                android:layout_height="wrap_content"
+                                android:layout_weight="1"
+                                android:text="@string/vm_log_copy"
+                                android:textSize="12sp"
+                                app:cornerRadius="12dp" />
+                        </LinearLayout>
                     </LinearLayout>
                 </net.cachapa.expandablelayout.ExpandableLayout>
             </LinearLayout>

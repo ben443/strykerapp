@@ -7,7 +7,8 @@ import com.zalexdev.stryker.utils.Core;
 
 public enum EngineType {
     CHROOT,
-    ROOTLESS;
+    ROOTLESS,
+    UML;
 
     public static final String PREF_KEY = "engine_type";
 
@@ -15,11 +16,21 @@ public enum EngineType {
         if (core == null) return CHROOT;
         String v = core.getString(PREF_KEY);
         if (v != null && v.equals(ROOTLESS.name())) return ROOTLESS;
+        if (v != null && v.equals(UML.name())) return UML;
         return CHROOT;
     }
 
     public static boolean isRootless(Core core) {
+        EngineType t = active(core);
+        return t == ROOTLESS || t == UML;
+    }
+
+    public static boolean isVm(Core core) {
         return active(core) == ROOTLESS;
+    }
+
+    public static boolean isUml(Core core) {
+        return active(core) == UML;
     }
 
     public static boolean isChosen(Core core) {
@@ -32,7 +43,7 @@ public enum EngineType {
         core.putString(PREF_KEY, type.name());
         try {
             java.io.File flag = RootlessPaths.activeFlag(core.context);
-            if (type == ROOTLESS) {
+            if (type == ROOTLESS || type == UML) {
                 java.io.File dir = flag.getParentFile();
                 if (dir != null && !dir.exists())
                     dir.mkdirs();

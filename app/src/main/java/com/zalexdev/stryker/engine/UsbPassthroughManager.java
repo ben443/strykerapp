@@ -13,6 +13,7 @@ import android.hardware.usb.UsbManager;
 import android.os.Build;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
+import androidx.core.content.ContextCompat;
 
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -22,7 +23,7 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-public final class UsbPassthroughManager {
+public final class UsbPassthroughManager implements GuestUsb {
 
     private static final String TAG = "UsbPassthrough";
     private static final String ACTION_USB_PERMISSION = "com.zalexdev.stryker.USB_PERMISSION";
@@ -39,7 +40,6 @@ public final class UsbPassthroughManager {
 
     public interface PermissionCallback { void onResult(boolean granted, UsbDevice device); }
 
-    public interface AttachCallback { void onResult(boolean attached, UsbDevice device); }
 
     private static final class Attached {
         final UsbDeviceConnection connection;
@@ -57,6 +57,26 @@ public final class UsbPassthroughManager {
         this.qmp = qmp;
     }
 
+    @Override
+    public java.util.List<UsbDevice> devices() {
+        java.util.List<UsbDevice> out = new java.util.ArrayList<>();
+        if (usbManager == null) return out;
+        out.addAll(usbManager.getDeviceList().values());
+        java.util.Collections.sort(out, (a, b) -> Integer.compare(a.getDeviceId(), b.getDeviceId()));
+        return out;
+    }
+
+    @Override
+    public String attachmentDetail(UsbDevice device) {
+        return "";
+    }
+
+    @Override
+    public void detach(UsbDevice device) {
+        if (device != null) detach(device.getDeviceId());
+    }
+
+    @Override
     public UsbDevice findByVidPid(String vidPid) {
         if (usbManager == null || vidPid == null) return null;
         String[] p = vidPid.split(":");
@@ -74,10 +94,12 @@ public final class UsbPassthroughManager {
         return null;
     }
 
+    @Override
     public boolean hasPermission(UsbDevice device) {
         return usbManager != null && device != null && usbManager.hasPermission(device);
     }
 
+    @Override
     public boolean isAttached(UsbDevice device) {
         return device != null && attached.containsKey(device.getDeviceId());
     }
@@ -95,6 +117,7 @@ public final class UsbPassthroughManager {
                 new Intent(ACTION_USB_PERMISSION).setPackage(context.getPackageName()), flags);
     }
 
+    @Override
     public void attachAsync(UsbDevice device, AttachCallback done) {
         if (device == null) { if (done != null) done.onResult(false, null); return; }
         if (isAttached(device)) { if (done != null) done.onResult(true, device); return; }
@@ -109,6 +132,7 @@ public final class UsbPassthroughManager {
         });
     }
 
+    @Override
     public synchronized boolean attach(UsbDevice device) {
         if (device == null || qmp == null) return false;
         if (attached.containsKey(device.getDeviceId())) return true;
@@ -184,6 +208,7 @@ public final class UsbPassthroughManager {
         try { a.connection.close(); } catch (Exception ignored) {}
     }
 
+    @Override
     public synchronized void detachAll() {
         for (Integer id : new java.util.ArrayList<>(attached.keySet())) {
             detach(id);
@@ -191,14 +216,17 @@ public final class UsbPassthroughManager {
         unregisterReceiver();
     }
 
+    @Override
     public synchronized boolean hasAttached() {
         return !attached.isEmpty();
     }
 
+    @Override
     public synchronized int attachedCount() {
         return attached.size();
     }
 
+    @Override
     public boolean isWifiCandidate(UsbDevice d) {
         if (d == null || d.getDeviceClass() == UsbConstants.USB_CLASS_HUB) return false;
         for (int i = 0; i < d.getInterfaceCount(); i++) {
@@ -211,6 +239,7 @@ public final class UsbPassthroughManager {
         return false;
     }
 
+    @Override
     public java.util.List<UsbDevice> pickWifiDevices() {
         java.util.List<UsbDevice> out = new java.util.ArrayList<>();
         if (usbManager == null) return out;
@@ -221,6 +250,7 @@ public final class UsbPassthroughManager {
         return out;
     }
 
+    @Override
     public int attachAllWifiDongles(long waitMs) {
         java.util.List<UsbDevice> picks = pickWifiDevices();
         if (picks.isEmpty()) return 0;
@@ -295,12 +325,8 @@ public final class UsbPassthroughManager {
         IntentFilter filter = new IntentFilter();
         filter.addAction(ACTION_USB_PERMISSION);
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(receiver, filter, null, receiverHandler,
-                    Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            context.registerReceiver(receiver, filter, null, receiverHandler);
-        }
+        ContextCompat.registerReceiver(context, receiver, filter, null, receiverHandler,
+                ContextCompat.RECEIVER_NOT_EXPORTED);
         receiverRegistered = true;
     }
 

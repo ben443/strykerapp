@@ -635,6 +635,11 @@ public class InstallService extends Service {
         }
     }
 
+    @Override
+    public void onTimeout(int startId, int fgsType) {
+        stopSelf();
+    }
+
     private void updateNotification(String tool, String text) {
         if (notificationManager == null) return;
         notificationManager.notify(FOREGROUND_NOTIFICATION_ID, buildNotification(label(tool), text));

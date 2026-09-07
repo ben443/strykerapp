@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.IBinder;
 
@@ -36,14 +37,28 @@ public class RootlessService extends Service {
     public void onCreate() {
         super.onCreate();
         createChannel();
-        startForeground(NOTIF_ID, buildNotification("Booting Linux VM…"));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIF_ID, buildNotification("Booting Linux VM…"),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+        } else {
+            startForeground(NOTIF_ID, buildNotification("Booting Linux VM…"));
+        }
+    }
+
+    @Override
+    public void onTimeout(int startId, int fgsType) {
+        try {
+            com.zalexdev.stryker.logger.LogStore.from(getApplicationContext());
+        } catch (Throwable ignored) {}
+        updateNotification("VM stopped: 6h foreground limit reached, reopen Stryker to resume");
+        stopSelf();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         try { VmStatsCollector.get(getApplicationContext()).start(); } catch (Throwable ignored) {}
         new Thread(() -> {
-            boolean ok = RootlessEngine.get(this).startBlocking(new RootlessEngine.BootListener() {
+            boolean ok = Engines.active(new com.zalexdev.stryker.utils.Core(this)).startBlocking(new RootlessEngine.BootListener() {
                 @Override public void onBootLine(String line) {}
                 @Override public void onBooted() { updateNotification("Linux VM ready"); }
                 @Override public void onFailed(String reason) { updateNotification("VM failed: " + reason); }
@@ -63,7 +78,8 @@ public class RootlessService extends Service {
             VmStatsCollector c = VmStatsCollector.peek();
             if (c != null) c.stop();
         } catch (Throwable ignored) {}
-        final RootlessEngine engine = RootlessEngine.get(getApplicationContext());
+        final GuestEngine engine = Engines.active(
+                new com.zalexdev.stryker.utils.Core(getApplicationContext()));
         new Thread(() -> {
             try { engine.stop(); } catch (Throwable ignored) {}
         }, "stryker-vm-service-stop").start();

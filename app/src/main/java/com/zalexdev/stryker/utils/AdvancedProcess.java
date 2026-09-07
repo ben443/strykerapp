@@ -92,6 +92,24 @@ public abstract class AdvancedProcess {
         logger.writeLine("Command: " + cmd, 1, tool);
         BufferedReader reader = new BufferedReader(new InputStreamReader(output));
         String line;
+        Thread errorPump = new Thread(() -> {
+            try (BufferedReader errorReader = new BufferedReader(new InputStreamReader(error))) {
+                String errLine;
+                while ((errLine = errorReader.readLine()) != null) {
+                    String trimmed = errLine.trim();
+                    if (!noLog) {
+                        logger.writeLine(trimmed, 3, tool);
+                    }
+                    outputList.add("[E] " + trimmed);
+                    if (!trimmed.startsWith(MACHINE_PREFIX)) {
+                        activity.runOnUiThread(() -> onNewLine(trimmed));
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }, "proc-stderr");
+        errorPump.setDaemon(true);
+        errorPump.start();
         try {
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
@@ -111,23 +129,14 @@ public abstract class AdvancedProcess {
         } catch (Exception ignored) {
 
         }
-        BufferedReader errorReader = new BufferedReader(new InputStreamReader(error));
-        try {
-            while ((line = errorReader.readLine()) != null) {
-                line = line.trim();
-                if (!noLog) {
-                    logger.writeLine(line, 3, tool);
-                }else{
-                }
-                outputList.add("[E] " + line);
-            }
-        } catch (Exception ignored) {
-
-        }
         try {
             process.waitFor();
         } catch (InterruptedException e) {
             e.printStackTrace();
+        }
+        try {
+            errorPump.join(1500);
+        } catch (InterruptedException ignored) {
         }
         process.destroy();
 

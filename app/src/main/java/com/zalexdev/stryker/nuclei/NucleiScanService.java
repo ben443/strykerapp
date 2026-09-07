@@ -441,6 +441,11 @@ public class NucleiScanService extends Service {
         }
     }
 
+    @Override
+    public void onTimeout(int startId, int fgsType) {
+        stopSelf();
+    }
+
     private void updateForegroundNotification(Site site) {
         int progress;
         try { progress = Integer.parseInt(site.progress); } catch (NumberFormatException e) { progress = 0; }

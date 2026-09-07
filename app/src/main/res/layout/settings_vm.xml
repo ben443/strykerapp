@@ -382,6 +382,37 @@
                 <View style="@style/VmDivider" />
 
                 <LinearLayout
+                    android:id="@+id/vm_uml_row"
+                    style="@style/VmRow">
+
+                    <ImageView
+                        style="@style/VmRowIcon"
+                        android:src="@drawable/ic_cpu"
+                        app:tint="#5E35B1" />
+
+                    <LinearLayout style="@style/VmRowText">
+
+                        <com.google.android.material.textview.MaterialTextView
+                            style="@style/VmRowTitle"
+                            android:text="@string/vm_uml_title" />
+
+                        <com.google.android.material.textview.MaterialTextView
+                            android:id="@+id/vm_uml_sub"
+                            style="@style/VmRowSub"
+                            android:text="@string/vm_uml_subtitle" />
+                    </LinearLayout>
+
+                    <com.google.android.material.switchmaterial.SwitchMaterial
+                        android:id="@+id/vm_uml_switch"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:clickable="false"
+                        android:focusable="false" />
+                </LinearLayout>
+
+                <View style="@style/VmDivider" />
+
+                <LinearLayout
                     android:id="@+id/vm_mttcg_row"
                     style="@style/VmRow">
 

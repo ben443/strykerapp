@@ -96,7 +96,7 @@ public class AppIntroActivity extends FragmentActivity {
         int keep = pages.indexOf(Page.ENGINE) + 1;
         while (pages.size() > keep) pages.remove(pages.size() - 1);
         pages.add(Page.PERMS);
-        if (type == EngineType.ROOTLESS) {
+        if (type == EngineType.ROOTLESS || type == EngineType.UML) {
             pages.add(Page.INSTALL_QEMU);
         } else {
             pages.add(Page.PCHECK);

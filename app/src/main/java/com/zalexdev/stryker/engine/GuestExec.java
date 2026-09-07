@@ -2,13 +2,12 @@ package com.zalexdev.stryker.engine;
 
 import android.util.Log;
 
+import com.jcraft.jsch.ChannelExec;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
-import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 
@@ -20,7 +19,6 @@ public final class GuestExec {
     private static final String JOB_DIR = "/tmp";
     private static final java.util.concurrent.atomic.AtomicLong JOB_SEQ =
             new java.util.concurrent.atomic.AtomicLong();
-    private static final int CONNECT_TIMEOUT_MS = 4000;
     private static final int READ_TIMEOUT_MS = 90_000;
 
     private GuestExec() {}
@@ -64,7 +62,7 @@ public final class GuestExec {
         Session s = null;
         try {
             s = open(command);
-            s.socket.setSoTimeout(READ_TIMEOUT_MS);
+            s.setReadTimeout(READ_TIMEOUT_MS);
             String line;
             while ((line = s.reader.readLine()) != null) {
                 if (line.startsWith(EXIT_SENTINEL)) {
@@ -80,8 +78,8 @@ public final class GuestExec {
                     + "s with no output (hung?) · " + shortCmd(command));
         } catch (IOException e) {
             Log.w(TAG, "run failed: " + e.getMessage());
-            logToStore("guest exec failed — VM not reachable on :" + RootlessPaths.HOST_EXEC_PORT
-                    + " (" + e.getMessage() + ") · " + shortCmd(command));
+            logToStore("guest exec failed — no ssh session to the guest on :"
+                    + RootlessPaths.HOST_SSH_PORT + " (" + e.getMessage() + ") · " + shortCmd(command));
         } finally {
             if (s != null) s.close();
         }
@@ -110,41 +108,35 @@ public final class GuestExec {
     }
 
     private static Session connect(String command, String jobId) throws IOException {
-        Socket sock = new Socket();
-        sock.connect(new InetSocketAddress(RootlessPaths.HOST_LOOPBACK, RootlessPaths.HOST_EXEC_PORT),
-                CONNECT_TIMEOUT_MS);
-        sock.setKeepAlive(true);
-        OutputStream os = sock.getOutputStream();
         String payload = jobId == null ? wrap(command) : wrapJob(command, jobId);
-        os.write(payload.getBytes(StandardCharsets.UTF_8));
-        os.flush();
-        return new Session(sock, jobId);
-    }
-
-    private static final String PING_MARK = "__STRYKER_PONG__";
-
-    public static boolean ping(int timeoutMs) {
-        try (Socket sock = new Socket()) {
-            sock.connect(new InetSocketAddress(RootlessPaths.HOST_LOOPBACK, RootlessPaths.HOST_EXEC_PORT),
-                    timeoutMs);
-            sock.setSoTimeout(Math.max(timeoutMs, 400));
-            OutputStream os = sock.getOutputStream();
-            os.write(("echo " + PING_MARK + "\nexit\n").getBytes(StandardCharsets.UTF_8));
-            os.flush();
-            BufferedReader br = new BufferedReader(
-                    new InputStreamReader(sock.getInputStream(), StandardCharsets.UTF_8));
-            String line;
-            while ((line = br.readLine()) != null) {
-                if (line.contains(PING_MARK)) return true;
-            }
-            return false;
-        } catch (IOException e) {
-            return false;
+        try {
+            ChannelExec channel = GuestSsh.exec("sh -c " + singleQuote(payload));
+            channel.connect(20_000);
+            return new Session(channel, jobId);
+        } catch (com.jcraft.jsch.JSchException e) {
+            throw new IOException(e.getMessage(), e);
         }
     }
 
+    private static String singleQuote(String s) {
+        return "'" + s.replace("'", "'\\''") + "'";
+    }
+
+    public static java.util.List<String> wirelessInterfaces() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (String l : run("iw dev 2>/dev/null | awk '$1==\"Interface\"{print $2}'")) {
+            if (l != null && !l.trim().isEmpty()) out.add(l.trim());
+        }
+        return out;
+    }
+
+    public static boolean ping(int timeoutMs) {
+        return GuestSsh.ping(timeoutMs);
+    }
+
     public static final class Session {
-        public final Socket socket;
+
+        private final ChannelExec channel;
         public final InputStream input;
         public final BufferedReader reader;
         public volatile int exitCode = -1;
@@ -152,19 +144,26 @@ public final class GuestExec {
         private final String jobId;
         private volatile boolean closed;
 
-        Session(Socket socket, String jobId) throws IOException {
-            this.socket = socket;
+        Session(ChannelExec channel, String jobId) throws IOException {
+            this.channel = channel;
             this.jobId = jobId;
-            this.input = socket.getInputStream();
+            this.input = channel.getInputStream();
             this.reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8));
         }
 
         public static final String SENTINEL = EXIT_SENTINEL;
 
+        public void setReadTimeout(int ms) {
+            try {
+                channel.getSession().setTimeout(ms);
+            } catch (Exception ignored) {
+            }
+        }
+
         public void close() {
             boolean first = !closed;
             closed = true;
-            try { socket.close(); } catch (IOException ignored) {}
+            try { channel.disconnect(); } catch (Exception ignored) {}
             if (first && jobId != null) killJob(jobId);
         }
     }
