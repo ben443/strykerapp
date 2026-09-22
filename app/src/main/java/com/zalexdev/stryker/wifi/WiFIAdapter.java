@@ -634,10 +634,11 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
 
                     String wlanscan = core.getHSInterface();
                     String deauthPref = core.getDeauthInterface();
-                    if (!core.isRootless() && MonitorManager.isInternalRadio(deauthPref)){
+                    if (!core.isRootless() && !core.isInternalDeauthEnabled()
+                            && MonitorManager.isInternalRadio(deauthPref)){
                         if (!MonitorManager.isInternalRadio(wlanscan)) {
                             deauthPref = wlanscan;
-                            sendEvent("Deauth interface is the internal radio — using " + wlanscan + " instead");
+                            sendEvent("Deauth interface is the internal radio — using " + wlanscan + " instead (enable 'Deauth with internal adapter' in Settings to use it)");
                         } else {
                             deauth = false;
                         }
@@ -747,6 +748,7 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                                     ? wlandeauth + "mon" : wlandeauth;
                             final String hsIface = capIface;
                             final boolean internalDeauth = !core.isRootless()
+                                    && !core.isInternalDeauthEnabled()
                                     && MonitorManager.isInternalRadio(deauthIface);
                             final String[] lastRelock = {""};
                             if (deauth) {
@@ -1210,9 +1212,10 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                 String deauthIface = core.getDeauthInterface();
                 monitor.metric(AttackMetric.IFACE, deauthIface);
                 monitor.stage(AttackStage.MONITOR, AttackStage.State.ACTIVE, deauthIface);
-                if (!core.isRootless() && MonitorManager.isInternalRadio(deauthIface)) {
-                    monitor.failStage(AttackStage.MONITOR, "wlan0 cannot inject",
-                            "Internal wifi adapter does not support packet injection — use an external adapter");
+                if (!core.isRootless() && !core.isInternalDeauthEnabled()
+                        && MonitorManager.isInternalRadio(deauthIface)) {
+                    monitor.failStage(AttackStage.MONITOR, "wlan0 deauth is disabled",
+                            "Enable 'Deauth with internal adapter' in Settings, or use an external adapter");
                     return;
                 }
                 boolean ok = core.enableMonitorMode(deauthIface, String.valueOf(channel));
