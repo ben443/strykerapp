@@ -4,14 +4,15 @@ plugins {
 
 android {
     namespace 'com.zalexdev.stryker'
-    compileSdk 33
+    compileSdk 36
+    ndkVersion '25.1.8937393'
 
     defaultConfig {
         applicationId "com.zalexdev.stryker"
         minSdk 24
-        targetSdk 28
-        versionCode 601
-        versionName "6.0.1"
+        targetSdk 36
+        versionCode 650
+        versionName "6.5.0"
 
         ndk {
             abiFilters 'arm64-v8a'
@@ -66,6 +67,8 @@ android {
 
     packagingOptions {
         resources.excludes.add("META-INF/*")
+
+        jniLibs.useLegacyPackaging = true
     }
 
     aaptOptions {
@@ -101,6 +104,8 @@ dependencies {
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'com.getkeepsafe.taptargetview:taptargetview:1.13.3'
     implementation 'com.nambimobile.widgets:expandable-fab:1.2.1'
+
+    implementation 'com.github.mwiede:jsch:0.2.18'
 
     implementation project(':terminal')
 }
