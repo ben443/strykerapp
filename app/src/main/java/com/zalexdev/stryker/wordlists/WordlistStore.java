@@ -66,6 +66,78 @@ public class WordlistStore {
         return "\"" + escaped + "\"";
     }
 
+    public String reachablePathQuoted(Wordlist wl) {
+        if (wl == null) return null;
+        String name = wl.getName();
+        String found = probe(candidates(name));
+        if (found != null) return quoteForShell(found);
+
+        File src = wl.file;
+        File dst = new File(dir(), name);
+        if (src != null && src.isFile() && !src.getAbsolutePath().equals(dst.getAbsolutePath())) {
+            if (copy(src, dst)) {
+                found = probe(candidates(name));
+                if (found != null) return quoteForShell(found);
+            }
+        }
+        return null;
+    }
+
+    private java.util.List<String> candidates(String name) {
+        java.util.LinkedHashSet<String> dirs = new java.util.LinkedHashSet<>();
+        dirs.add(core.guestShare() + "/wordlists");
+        dirs.add("/sdcard/Stryker/wordlists");
+        dirs.add("/host/wordlists");
+        try {
+            File ext = core.context.getExternalFilesDir(null);
+            if (ext != null) {
+                dirs.add(ext.getAbsolutePath() + "/Stryker/wordlists");
+                dirs.add("/sdcard/Android/data/" + core.context.getPackageName()
+                        + "/files/Stryker/wordlists");
+            }
+        } catch (Throwable ignored) {
+        }
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (String d : dirs) out.add(d + "/" + name);
+        return out;
+    }
+
+    private String probe(java.util.List<String> paths) {
+        StringBuilder sb = new StringBuilder();
+        for (String p : paths) {
+            sb.append("[ -f ").append(quoteForShell(p)).append(" ] && { echo __WL__")
+                    .append(p).append("; exit 0; }; ");
+        }
+        sb.append("true");
+        try {
+            for (String line : core.customChrootCommand(sb.toString())) {
+                if (line == null) continue;
+                int at = line.indexOf("__WL__");
+                if (at >= 0) {
+                    String hit = line.substring(at + 6).trim();
+                    if (!hit.isEmpty()) return hit;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private static boolean copy(File src, File dst) {
+        try {
+            dst.getParentFile().mkdirs();
+            try (java.io.InputStream in = new java.io.FileInputStream(src);
+                 java.io.OutputStream out = new java.io.FileOutputStream(dst)) {
+                byte[] buf = new byte[1 << 16];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            }
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     public List<Wordlist> list() {
         List<Wordlist> out = new ArrayList<>();
         File[] files = dir().listFiles();

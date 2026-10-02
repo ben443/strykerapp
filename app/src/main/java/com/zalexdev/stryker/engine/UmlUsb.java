@@ -2,7 +2,6 @@ package com.zalexdev.stryker.engine;
 
 import android.content.Context;
 import android.hardware.usb.UsbDevice;
-import android.util.Log;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -18,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import com.stryker.terminal.bridge.StrykerLog;
 
 final class UmlUsb implements GuestUsb {
 
@@ -78,11 +78,24 @@ final class UmlUsb implements GuestUsb {
 
     @Override
     public UsbDevice findByVidPid(String vidPid) {
-        return host.findByVidPid(vidPid);
+        UsbDevice first = null;
+        for (UsbDevice d : host.matching(vidPid)) {
+            if (first == null) first = d;
+            if (!isAttached(d)) return d;
+        }
+        return first;
     }
 
     @Override
     public boolean hasPermission(UsbDevice device) {
+        return host.hasPermission(device);
+    }
+
+    @Override
+    public boolean requestPermission(UsbDevice device, long waitMs) {
+        if (device == null) return false;
+        if (host.hasPermission(device)) return true;
+        host.requestPermissionBlocking(device, waitMs);
         return host.hasPermission(device);
     }
 
@@ -116,7 +129,7 @@ final class UmlUsb implements GuestUsb {
             stale = !attached.isEmpty();
         }
         if (!stale || engine.isRunning()) return;
-        Log.i(TAG, "the guest is gone; releasing the devices it had");
+        StrykerLog.i(TAG, "the guest is gone; releasing the devices it had");
         detachAll();
     }
 
@@ -167,12 +180,23 @@ final class UmlUsb implements GuestUsb {
         return ok;
     }
 
+    private final Object attachLock = new Object();
+
     @Override
     public boolean attach(UsbDevice device) {
         if (device == null) return false;
         synchronized (this) {
             if (attached.containsKey(device.getDeviceId())) return true;
         }
+        synchronized (attachLock) {
+            synchronized (this) {
+                if (attached.containsKey(device.getDeviceId())) return true;
+            }
+            return attachLocked(device);
+        }
+    }
+
+    private boolean attachLocked(UsbDevice device) {
         if (!engine.isReady() && !engine.startBlocking(null)) {
             GuestExec.logToStore("USB: the UML guest is not running, so there is nowhere to "
                     + "attach " + UsbHostAccess.describe(device));
@@ -242,7 +266,14 @@ final class UmlUsb implements GuestUsb {
         if (!startup.ok) {
             proc.destroy();
             close(fdSocket);
-            GuestExec.logToStore("USB: the USB/IP server did not come up: " + startup.problem);
+            if (startup.unconfigured) {
+                GuestExec.logToStore("USB: " + UsbHostAccess.describe(device)
+                        + " has no active configuration, so there is no interface to hand over."
+                        + " Android's kernel claimed the adapter, could not find its firmware and"
+                        + " dropped it without putting it back. Unplug it and plug it in again.");
+            } else {
+                GuestExec.logToStore("USB: the USB/IP server did not come up: " + startup.problem);
+            }
             return false;
         }
         drain(proc, startup.reader, UsbHostAccess.describe(device));
@@ -259,7 +290,7 @@ final class UmlUsb implements GuestUsb {
             proc.destroy();
             close(fdSocket);
             String why = attachError(out);
-            Log.w(TAG, "attach failed: " + out);
+            StrykerLog.w(TAG, "attach failed: " + out);
             GuestExec.logToStore("USB: " + UsbHostAccess.describe(device)
                     + " was not attached — " + why);
             return false;
@@ -278,7 +309,7 @@ final class UmlUsb implements GuestUsb {
         else if (driver.isEmpty()) said.append(", with no driver bound — the node is there for a "
                 + "userspace driver to open");
         GuestExec.logToStore(said.toString());
-        Log.i(TAG, said.toString());
+        StrykerLog.i(TAG, said.toString());
         return true;
     }
 
@@ -317,12 +348,13 @@ final class UmlUsb implements GuestUsb {
         try {
             GuestExec.run("bash /host/usb-attach.sh --detach " + vhciPort + " 2>&1");
         } catch (Throwable t) {
-            Log.w(TAG, "guest detach of port " + vhciPort + " failed", t);
+            StrykerLog.w(TAG, "guest detach of port " + vhciPort + " failed", t);
         }
     }
 
     private static final class Startup {
         boolean ok;
+        boolean unconfigured;
         String problem = "";
         String devid = "";
         String speed = "";
@@ -353,7 +385,7 @@ final class UmlUsb implements GuestUsb {
                     s.problem = lastProblem.isEmpty() ? "its output ended" : lastProblem;
                     return s;
                 }
-                Log.i(TAG, line);
+                StrykerLog.i(TAG, line);
                 Matcher m = probeLine.matcher(line);
                 if (m.find()) s.busid = m.group(1);
                 m = attachLine.matcher(line);
@@ -362,6 +394,10 @@ final class UmlUsb implements GuestUsb {
                     s.speed = m.group(2);
                     s.ok = true;
                     return s;
+                }
+                if (line.contains("claiming interface")
+                        && line.contains("No such file or directory")) {
+                    s.unconfigured = true;
                 }
                 if (line.contains(":") && !line.contains("interface ") && !line.contains("endpoint ")) {
                     lastProblem = line.replaceFirst("^umusb: ", "").trim();
@@ -381,11 +417,11 @@ final class UmlUsb implements GuestUsb {
         Thread t = new Thread(() -> {
             try {
                 String line;
-                while ((line = reader.readLine()) != null) Log.i(TAG, line);
+                while ((line = reader.readLine()) != null) StrykerLog.i(TAG, line);
             } catch (IOException ignored) {
             } finally {
                 try { reader.close(); } catch (IOException ignored) {}
-                Log.i(TAG, "the USB/IP server for " + label + " ended");
+                StrykerLog.i(TAG, "the USB/IP server for " + label + " ended");
             }
         }, "umusb-log");
         t.setDaemon(true);
@@ -411,13 +447,21 @@ final class UmlUsb implements GuestUsb {
              OutputStream out = new FileOutputStream(target)) {
             byte[] buf = new byte[8192];
             int n;
-            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, stripCr(buf, n));
         } catch (IOException e) {
-            Log.w(TAG, "staging usb-attach.sh", e);
+            StrykerLog.w(TAG, "staging usb-attach.sh", e);
             return false;
         }
         target.setReadable(true, false);
         return true;
+    }
+
+    private static int stripCr(byte[] buf, int len) {
+        int w = 0;
+        for (int i = 0; i < len; i++) {
+            if (buf[i] != '\r') buf[w++] = buf[i];
+        }
+        return w;
     }
 
     private static String attachError(String out) {

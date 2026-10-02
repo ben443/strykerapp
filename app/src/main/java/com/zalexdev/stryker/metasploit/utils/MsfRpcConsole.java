@@ -1,6 +1,5 @@
 package com.zalexdev.stryker.metasploit.utils;
 
-import android.util.Log;
 
 import com.zalexdev.stryker.engine.GuestExec;
 import com.zalexdev.stryker.engine.RootlessPaths;
@@ -16,6 +15,7 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
+import com.stryker.terminal.bridge.StrykerLog;
 
 public class MsfRpcConsole {
 
@@ -101,7 +101,7 @@ public class MsfRpcConsole {
             publishState(State.DEAD, eof ? "msfconsole exited" : "boot timeout");
             return false;
         } catch (IOException e) {
-            Log.e(TAG, label + " boot failed", e);
+            StrykerLog.e(TAG, label + " boot failed", e);
             publishState(State.DEAD, e.getMessage() == null ? "io error" : e.getMessage());
             return false;
         }
@@ -145,7 +145,7 @@ public class MsfRpcConsole {
             stdin.flush();
             return null;
         } catch (IOException e) {
-            Log.e(TAG, label + " su channel failed", e);
+            StrykerLog.e(TAG, label + " su channel failed", e);
             return e.getMessage() == null ? "io error" : e.getMessage();
         }
     }
@@ -153,7 +153,7 @@ public class MsfRpcConsole {
     private String openGuestChannel() {
         if (!GuestExec.ping(GUEST_CONNECT_TIMEOUT_MS)) {
             try {
-                if (!core.rootless().startBlocking(null)) return "VM is not running";
+                if (!core.guest().startBlocking(null)) return "VM is not running";
             } catch (Throwable t) {
                 return "VM is not running";
             }
@@ -170,7 +170,7 @@ public class MsfRpcConsole {
             stdin.flush();
             return null;
         } catch (Exception e) {
-            Log.e(TAG, label + " guest channel failed", e);
+            StrykerLog.e(TAG, label + " guest channel failed", e);
             return "guest unreachable over ssh on :" + RootlessPaths.HOST_SSH_PORT;
         }
     }
@@ -203,7 +203,7 @@ public class MsfRpcConsole {
                 }
                 publishState(State.DEAD, eof ? "msfconsole exited" : "command timeout");
             } catch (Exception e) {
-                Log.e(TAG, label + " io error in command", e);
+                StrykerLog.e(TAG, label + " io error in command", e);
                 publishState(State.DEAD, e.getMessage() == null ? "io error" : e.getMessage());
             }
         }
@@ -259,7 +259,7 @@ public class MsfRpcConsole {
         stdin = null;
         stdout = null;
         eof = false;
-        Log.d(TAG, label + " torn down (" + why + ")");
+        StrykerLog.d(TAG, label + " torn down (" + why + ")");
     }
 
     private void startStderrPump(final InputStream err) {

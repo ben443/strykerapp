@@ -6,12 +6,12 @@ import android.os.Message;
 import android.system.ErrnoException;
 import android.system.Os;
 import android.system.OsConstants;
-import android.util.Log;
 
 import java.io.*;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
+import com.stryker.terminal.bridge.StrykerLog;
 
 public class TerminalSession extends TerminalOutput {
 
@@ -43,7 +43,7 @@ public class TerminalSession extends TerminalOutput {
       descriptorField.setAccessible(true);
       descriptorField.set(result, fileDescriptor);
     } catch (NoSuchFieldException | IllegalAccessException | IllegalArgumentException e) {
-      Log.wtf(EmulatorDebug.LOG_TAG, "Error accessing FileDescriptor#descriptor private field", e);
+      StrykerLog.wtf(EmulatorDebug.LOG_TAG, "Error accessing FileDescriptor#descriptor private field", e);
       System.exit(1);
     }
     return result;
@@ -387,7 +387,7 @@ public class TerminalSession extends TerminalOutput {
       try {
         Os.kill(mShellPid, OsConstants.SIGKILL);
       } catch (ErrnoException e) {
-        Log.w("neoterm-shell-session",
+        StrykerLog.w("neoterm-shell-session",
           "Failed sending SIGKILL: " + e.getMessage());
       }
     }

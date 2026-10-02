@@ -7,6 +7,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import com.stryker.terminal.bridge.StrykerLog;
 
 public final class UmlEngine implements GuestEngine {
 
@@ -43,12 +44,14 @@ public final class UmlEngine implements GuestEngine {
         return new File(app.getApplicationInfo().nativeLibraryDir);
     }
 
+    private static final int BOOT_PING_TIMEOUT_MS = 15_000;
+
     public File base()    { return new File(app.getFilesDir(), "uml"); }
     public File console() { return new File(base(), "console.log"); }
 
     public File tempDir()  { return new File(base(), "tmp"); }
 
-    private String fallbackTempDir() {
+    String fallbackTempDir() {
         String[] vars = {"TMPDIR", "TMP", "TEMP"};
         for (String v : vars) {
             String value = System.getenv(v);
@@ -248,7 +251,7 @@ public final class UmlEngine implements GuestEngine {
             GuestExec.logToStore("installed a systemctl that works without systemd "
                     + "(this guest's init is not systemd, so services start through it)");
         } catch (Exception e) {
-            Log.w(TAG, "could not install the systemctl shim: " + e.getMessage());
+            StrykerLog.w(TAG, "could not install the systemctl shim: " + e.getMessage());
         }
     }
 
@@ -353,8 +356,8 @@ public final class UmlEngine implements GuestEngine {
     @Override
     public State status() {
         if (!isRunning()) return State.STOPPED;
-        return System.currentTimeMillis() - lastGuestOk < GUEST_FRESH_MS
-                ? State.READY : State.BOOTING;
+        boolean fresh = System.currentTimeMillis() - lastGuestOk < GUEST_FRESH_MS;
+        return fresh && lastGuestOk >= GuestSsh.lastLossAt() ? State.READY : State.BOOTING;
     }
 
     @Override
@@ -400,9 +403,9 @@ public final class UmlEngine implements GuestEngine {
     @Override
     public boolean startBlocking(BootListener listener) {
         stopRequested = false;
-        Log.i(TAG, "startBlocking: installed=" + isInstalled() + " running=" + isRunning());
+        StrykerLog.i(TAG, "startBlocking: installed=" + isInstalled() + " running=" + isRunning());
         try {
-            if (isRunning() && GuestExec.ping(2000)) {
+            if (isRunning() && GuestExec.ping(BOOT_PING_TIMEOUT_MS)) {
                 ensureSystemctlShim();
                 startPortMirror();
                 if (listener != null) listener.onBooted();
@@ -424,12 +427,13 @@ public final class UmlEngine implements GuestEngine {
             for (int i = 0; i < 150 && !stopRequested; i++) {
                 if (!isRunning()) {
                     Integer code = exitCode();
+                    logConsoleTail();
                     return fail(listener, "the guest exited"
                             + (code != null ? " (" + code + ")" : "") + ": " + lastConsoleProblem());
                 }
                 if (GuestSsh.guestReported()) {
                     if (listener != null && i % 5 == 0) listener.onBootLine("guest up, opening ssh");
-                    if (GuestExec.ping(2000)) {
+                    if (GuestExec.ping(BOOT_PING_TIMEOUT_MS)) {
                         lastError = "";
                         lastGuestOk = System.currentTimeMillis();
                         ensureSystemctlShim();
@@ -441,16 +445,25 @@ public final class UmlEngine implements GuestEngine {
                 try { Thread.sleep(1000); } catch (InterruptedException e) { break; }
             }
             if (stopRequested) return false;
-            return fail(listener, "the guest did not answer within 150s: " + lastConsoleProblem());
+            return fail(listener, "the guest did not answer within 150s — "
+                    + lastConsoleProblem());
         } catch (Exception e) {
-            Log.w(TAG, "start failed", e);
+            StrykerLog.w(TAG, "start failed", e);
             return fail(listener, e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName());
         }
     }
 
+    private void logConsoleTail() {
+        List<String> tail = consoleTail(12);
+        if (tail.isEmpty()) return;
+        StringBuilder sb = new StringBuilder("UML engine: last lines of the guest console:");
+        for (String l : tail) sb.append("\n  ").append(l);
+        GuestExec.logToStore(sb.toString());
+    }
+
     private boolean fail(BootListener listener, String reason) {
         lastError = reason;
-        Log.w(TAG, "boot failed: " + reason);
+        StrykerLog.w(TAG, "boot failed: " + reason);
         GuestExec.logToStore("UML engine: " + reason);
         if (listener != null) listener.onFailed(reason);
         return false;
@@ -464,20 +477,23 @@ public final class UmlEngine implements GuestEngine {
                 String line;
                 while ((line = r.readLine()) != null) {
                     tail.add(line);
-                    if (tail.size() > 80) tail.remove(0);
+                    if (tail.size() > 200) tail.remove(0);
                 }
             }
-            for (int i = tail.size() - 1; i >= 0; i--) {
-                String l = tail.get(i);
-                if (l.contains("Kernel panic") || l.contains("Aborted") || l.contains("cannot")
-                        || l.contains("failed") || l.contains("Failed") || l.contains("error")) {
-                    return l.trim() + hostNotes(tail);
-                }
-            }
-            return tail.isEmpty() ? "the console is empty" : tail.get(tail.size() - 1).trim();
+            return BootDiagnosis.reason(tail, VmBootStage.detect(tail)) + hostNotes(tail);
         } catch (Exception e) {
             return "see " + console().getName();
         }
+    }
+
+    private static boolean looksLikeAnExplanation(String l) {
+        if (l == null || l.trim().isEmpty()) return false;
+        if (l.contains("Kernel panic") || l.contains("Aborted")) return true;
+        String lower = l.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("cannot") || lower.contains("couldn't") || lower.contains("could not")
+                || lower.contains("failed") || lower.contains("error")
+                || lower.contains("denied") || lower.contains("no such")
+                || lower.contains("address already in use") || lower.contains("unable to");
     }
 
     private String hostNotes(List<String> tail) {
@@ -523,8 +539,14 @@ public final class UmlEngine implements GuestEngine {
             throw new IOException("could not place the ssh key in the share: " + why, e);
         }
 
+        String execProblem = NativeExec.check(app, umnet(), passt(), kernel(), stub());
+        if (execProblem != null) {
+            GuestExec.logToStore(execProblem);
+            throw new IOException(execProblem);
+        }
+
         List<String> cmd = buildCommand(shareDir, memoryMb, cpus, seccomp);
-        Log.i(TAG, "starting: " + String.join(" ", cmd));
+        StrykerLog.i(TAG, "starting: " + String.join(" ", cmd));
         GuestExec.logToStore("UML engine starting, share " + shareDir.getAbsolutePath());
 
         ProcessBuilder pb = new ProcessBuilder(cmd);
@@ -535,7 +557,12 @@ public final class UmlEngine implements GuestEngine {
             GuestExec.logToStore("no host tempdir: guest memory will live in " + ownTmp);
         }
         pb.redirectErrorStream(true);
-        Process p = pb.start();
+        Process p;
+        try {
+            p = pb.start();
+        } catch (IOException e) {
+            throw new IOException(NativeExec.explain(umnet(), e), e);
+        }
         process = p;
         startConsolePump(p);
     }
@@ -578,7 +605,7 @@ public final class UmlEngine implements GuestEngine {
                     out.println(line);
                     out.flush();
                     if (line.startsWith("STRYKER_BOOT") || line.startsWith("STRYKER_INIT")) {
-                        Log.i(TAG, line);
+                        StrykerLog.i(TAG, line);
                     }
                 }
             } catch (IOException ignored) {
@@ -593,7 +620,7 @@ public final class UmlEngine implements GuestEngine {
         java.util.List<Integer> pids = findGuestPids();
         if (pids.isEmpty()) return 0;
 
-        Log.i(TAG, "reaping " + pids.size() + " stray guest process(es): " + pids);
+        StrykerLog.i(TAG, "reaping " + pids.size() + " stray guest process(es): " + pids);
         for (int pid : pids) {
             android.os.Process.sendSignal(pid, 15);
         }
@@ -603,7 +630,7 @@ public final class UmlEngine implements GuestEngine {
         }
         java.util.List<Integer> left = findGuestPids();
         for (int pid : left) {
-            Log.w(TAG, "guest pid " + pid + " ignored SIGTERM, killing");
+            StrykerLog.w(TAG, "guest pid " + pid + " ignored SIGTERM, killing");
             android.os.Process.killProcess(pid);
         }
         deadline = System.currentTimeMillis() + 3000;

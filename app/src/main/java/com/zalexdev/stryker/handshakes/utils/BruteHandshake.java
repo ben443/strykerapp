@@ -78,7 +78,7 @@ public class BruteHandshake extends AsyncTask<Void, String, WiFINetwork> {
         try {
             if (core.isRootless()) {
                 String guestCmd = "aircrack-ng -w " + wordlist + " " + guestCapture() + " ";
-                guestSession = core.rootless().openStream(guestCmd);
+                guestSession = core.guest().openStream(guestCmd);
                 BufferedReader gbr = guestSession.reader;
                 while ((line = gbr.readLine()) != null) {
                     if (line.startsWith(GuestExec.Session.SENTINEL)) break;

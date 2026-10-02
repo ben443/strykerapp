@@ -72,12 +72,12 @@ public enum AttackKind {
     HANDSHAKE("Handshake capture", R.drawable.handshake_interface, R.color.accent_handshakes,
             new AttackStage[] { MONITOR, CAPTURE, AttackStage.TARGET, DEAUTH, EAPOL, SAVE },
             new AttackMetric[] { ELAPSED, CHANNEL, CLIENTS, STATE, FRAMES, RATE },
-            "Deauth bursts per second"),
+            null),
 
     DEAUTH_ONE("Deauthentication", R.drawable.deauth, R.color.red,
             new AttackStage[] { MONITOR, INJECT },
             new AttackMetric[] { ELAPSED, CHANNEL, FRAMES, RATE, STATE, IFACE },
-            "Deauth bursts per second"),
+            null),
 
     MASS_PIXIE("Pixie Dust sweep", R.drawable.autopixie, R.color.accent_wifi,
             new AttackStage[] { RADIO, SWEEP, ASSOC, WPS },
@@ -92,7 +92,7 @@ public enum AttackKind {
     MASS_DEAUTH("Broadcast deauthentication", R.drawable.deauth, R.color.red,
             new AttackStage[] { MONITOR, INJECT },
             new AttackMetric[] { ELAPSED, FRAMES, RATE, IFACE },
-            "Packets per second");
+            null);
 
     public final String title;
     public final int icon;

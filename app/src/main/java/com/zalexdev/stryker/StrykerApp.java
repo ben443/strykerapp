@@ -26,6 +26,17 @@ public class StrykerApp extends com.stryker.terminal.App {
         store.add(LogEntry.INFO, "session", "Device: " + Build.MANUFACTURER + " " + Build.MODEL
                 + " · Android " + Build.VERSION.RELEASE
                 + " (" + abi + ")");
+        com.stryker.terminal.bridge.StrykerLog.install((level, tag, message, error) -> {
+            LogStore s = LogStore.peek();
+            if (s == null) return;
+            String text = message;
+            if (error != null) {
+                text = (text == null || text.isEmpty() ? "" : text + System.lineSeparator())
+                        + android.util.Log.getStackTraceString(error);
+            }
+            s.add(level, tag, text);
+        });
+
         NotificationCenter.ensureChannel(this);
         UpdateScheduler.schedule(this);
         applyEdgeToEdgeInsets();

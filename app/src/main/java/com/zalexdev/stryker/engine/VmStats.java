@@ -21,7 +21,7 @@ public final class VmStats {
         public long totalRamBytes;
     }
 
-    private static final String QEMU_MARK = "qemu-system";
+    private static final String[] GUEST_BINARIES = {"libqemu.so", "libuml.so"};
     private static final long PID_RESCAN_MS = 2500L;
     private static final double MIN_DELTA_SEC = 0.15d;
 
@@ -107,8 +107,6 @@ public final class VmStats {
         return totalRam;
     }
 
-    private static final String UML_MARK = "libuml.so";
-
     private int resolvePid() {
         if (pid > 0) {
             if (isGuest(pid)) return pid;
@@ -144,7 +142,12 @@ public final class VmStats {
     private static boolean isGuest(int candidate) {
         String argv0 = argv0(candidate);
         if (argv0 == null || argv0.isEmpty()) return false;
-        return argv0.contains(QEMU_MARK) || argv0.endsWith(UML_MARK);
+        int slash = argv0.lastIndexOf('/');
+        String name = slash < 0 ? argv0 : argv0.substring(slash + 1);
+        for (String binary : GUEST_BINARIES) {
+            if (name.equals(binary)) return true;
+        }
+        return name.startsWith("qemu-system");
     }
 
     private static String argv0(int candidate) {

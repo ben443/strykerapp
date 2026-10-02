@@ -133,6 +133,7 @@ public class Wifi extends Fragment {
         emptyCard = view.findViewById(R.id.wifi_empty_card);
         listCard = view.findViewById(R.id.wifi_list_card);
         core = new Core(context);
+        bindCoreToInterface();
         tryagain.setOnClickListener(view1 -> scan());
         fab = view.findViewById(R.id.fab);
         fab.hide();
@@ -210,6 +211,7 @@ public class Wifi extends Fragment {
         scanThread = new Thread(() -> {
             try {
                 if (core.isRootless()) {
+                    com.zalexdev.stryker.engine.WifiEngine.ensureStarting(context);
                     com.zalexdev.stryker.logger.Logger log = new com.zalexdev.stryker.logger.Logger();
                     com.zalexdev.stryker.engine.GuestEngine guest = core.guest();
                     log.writeLine("Rootless WiFi: passing USB adapter into "
@@ -218,8 +220,12 @@ public class Wifi extends Fragment {
                     log.writeLine(attached ? "USB adapter attached — driver OK"
                             : "USB adapter not usable", attached ? 2 : 3, "wifi");
                     if (!attached) {
+                        if (!guest.isRunning()) {
+                            safeUi(this::showGuestDownState);
+                            return;
+                        }
                         boolean noDriver = guest.usb() != null && guest.usb().hasAttached();
-                        safeUi(noDriver ? this::showNoDriverState : this::showNoAdapterState);
+                        if (noDriver) reportNoDriver(); else safeUi(this::showNoAdapterState);
                         return;
                     }
                     boolean up = false;
@@ -251,7 +257,7 @@ public class Wifi extends Fragment {
                                 + "echo '### ip link'; ip -br link 2>&1; "
                                 + "echo '### iw dev'; iw dev 2>&1; "
                                 + "echo '### dmesg'; dmesg 2>&1 | grep -iE 'usb|wlan|firmware|cfg80211|ieee80211|rtl|ath|mt7|88x' | tail -40");
-                        safeUi(this::showNoDriverState);
+                        reportNoDriver();
                         return;
                     }
                     core.rootlessPrepWifi(target);
@@ -259,6 +265,14 @@ public class Wifi extends Fragment {
                     log.writeLine("Adapter ready — scanning…", 2, "wifi");
                 }
                 ArrayList<String> wlans = core.getInterfacesList();
+                if (!core.isRootless() && !wlans.contains(wlan) && !wlans.contains(wlan + "mon")) {
+                    com.zalexdev.stryker.engine.WifiDriverProbe.Result probe =
+                            com.zalexdev.stryker.engine.WifiDriverProbe.probe(context, core);
+                    if (probe.needsGuest()) {
+                        safeUi(() -> showKernelNoDriverState(probe));
+                        return;
+                    }
+                }
                 if (wlans.contains(wlan + "mon")) {
                     wlan = wlan + "mon";
                 }
@@ -385,6 +399,95 @@ public class Wifi extends Fragment {
         fab.hide();
     }
 
+    private void showKernelNoDriverState(
+            com.zalexdev.stryker.engine.WifiDriverProbe.Result probe) {
+        if (img != null) { img.setAnimation(R.raw.nothing); img.playAnimation(); }
+        renderListState(false);
+        text1.setText(R.string.wifi_nodriver_state_title);
+        textSub.setText(getString(R.string.wifi_nodriver_state_body, probe.label));
+        tryagain.setVisibility(View.VISIBLE);
+        tryagain.setText(R.string.wifi_nodriver_state_action);
+        tryagain.setOnClickListener(v -> offerWifiGuest(probe));
+        scanProgress.setVisibility(View.GONE);
+        statusValue.setText(R.string.wifi_nodriver_state_status);
+        subtitle.setText(getString(R.string.wifi_nodriver_state_body, probe.label));
+        countChip.setText("0");
+        refresh.setEnabled(true);
+        refresh.setRefreshing(false);
+        fab.hide();
+    }
+
+    private void offerWifiGuest(com.zalexdev.stryker.engine.WifiDriverProbe.Result probe) {
+        if (context == null || activity == null) return;
+        new MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.wifi_nodriver_title)
+                .setMessage(getString(R.string.wifi_nodriver_body, probe.label))
+                .setPositiveButton(R.string.wifi_nodriver_setup,
+                        (d, w) -> startWifiGuestSetup())
+                .setNegativeButton(R.string.wifi_nodriver_later, null)
+                .show();
+    }
+
+    private void startWifiGuestSetup() {
+        if (activity == null) return;
+        com.zalexdev.stryker.wifi.guest.WifiGuestSetupDialog.show(activity, (armed, iface) -> {
+            if (!armed) return;
+            wlan = iface;
+            bindCoreToInterface();
+            scan();
+        });
+    }
+
+    private void showGuestDownState() {
+        if (img != null) { img.setAnimation(R.raw.nothing); img.playAnimation(); }
+        renderListState(false);
+        text1.setText(R.string.wifi_guest_down_title);
+        textSub.setText(R.string.wifi_guest_down_body);
+        tryagain.setVisibility(View.VISIBLE);
+        tryagain.setText(R.string.try_again);
+        tryagain.setOnClickListener(v -> {
+            com.zalexdev.stryker.engine.WifiEngine.ensureStarting(context);
+            scan();
+        });
+        scanProgress.setVisibility(View.GONE);
+        statusValue.setText(R.string.wifi_status_failed);
+        subtitle.setText(R.string.wifi_guest_down_title);
+        countChip.setText("0");
+        refresh.setEnabled(true);
+        refresh.setRefreshing(false);
+        fab.hide();
+    }
+
+    private void reportNoDriver() {
+        String setUpFor = com.zalexdev.stryker.engine.WifiEngine.adapter(core);
+        com.zalexdev.stryker.engine.WifiDriverProbe.Result now = setUpFor.isEmpty() ? null
+                : com.zalexdev.stryker.engine.WifiDriverProbe.probe(context, new Core(context));
+        final boolean swapped = now != null && !now.vidPid.isEmpty()
+                && !setUpFor.equals(now.vidPid);
+        final String nowLabel = now == null ? "" : now.label;
+        safeUi(() -> {
+            if (swapped) showAdapterChangedState(setUpFor, nowLabel);
+            else showNoDriverState();
+        });
+    }
+
+    private void showAdapterChangedState(String setUpFor, String nowLabel) {
+        if (img != null) { img.setAnimation(R.raw.nothing); img.playAnimation(); }
+        renderListState(false);
+        text1.setText(R.string.wifi_guest_adapter_changed_title);
+        textSub.setText(getString(R.string.wifi_guest_adapter_changed_body, setUpFor, nowLabel));
+        tryagain.setVisibility(View.VISIBLE);
+        tryagain.setText(R.string.wifi_guest_adapter_changed_action);
+        tryagain.setOnClickListener(v -> startWifiGuestSetup());
+        scanProgress.setVisibility(View.GONE);
+        statusValue.setText(R.string.wifi_status_failed);
+        subtitle.setText(R.string.wifi_guest_adapter_changed_title);
+        countChip.setText("0");
+        refresh.setEnabled(true);
+        refresh.setRefreshing(false);
+        fab.hide();
+    }
+
     private void showNoDriverState() {
         if (img != null) { img.setAnimation(R.raw.nothing); img.playAnimation(); }
         renderListState(false);
@@ -415,7 +518,11 @@ public class Wifi extends Fragment {
     }
 
     private void updateAdapterMeta() {
-        ifaceMeta.setText(wlan == null || wlan.isEmpty() ? "—" : wlan);
+        String where = wlan == null || wlan.isEmpty() ? "—" : wlan;
+        if (core != null && core.engineOverride() != null) {
+            where = getString(R.string.wifi_guest_active_meta, where);
+        }
+        ifaceMeta.setText(where);
         boolean has24 = false;
         boolean has5 = false;
         Set<Integer> channels = new HashSet<>();
@@ -440,8 +547,24 @@ public class Wifi extends Fragment {
     private void pickWifiInterface() {
         if (context == null) return;
         new Thread(() -> {
-            ArrayList<String> ifaces = core.getInterfacesList();
-            safeUi(() -> showWifiInterfacePicker(ifaces));
+            ArrayList<String> ifaces = new ArrayList<>();
+            Core phone = new Core(context);
+            for (String s : phone.getInterfacesList()) if (!ifaces.contains(s)) ifaces.add(s);
+
+            com.zalexdev.stryker.engine.EngineType guestType =
+                    com.zalexdev.stryker.engine.WifiEngine.armed(phone)
+                            ? com.zalexdev.stryker.engine.WifiEngine.configured(phone) : null;
+            if (guestType != null) {
+                try {
+                    Core guestCore = new Core(context).overrideEngine(guestType);
+                    for (String s : guestCore.getInterfacesList()) {
+                        if (!ifaces.contains(s)) ifaces.add(s);
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+            final ArrayList<String> merged = ifaces;
+            safeUi(() -> showWifiInterfacePicker(merged));
         }).start();
     }
 
@@ -449,7 +572,9 @@ public class Wifi extends Fragment {
         if (context == null || activity == null) return;
         String[] items = new String[interfaces.size() + 1];
         for (int i = 0; i < interfaces.size(); i++) {
-            items[i] = interfaces.get(i);
+            String name = interfaces.get(i);
+            items[i] = com.zalexdev.stryker.engine.WifiEngine.isGuestInterface(core, name)
+                    ? getString(R.string.wifi_guest_active_meta, name) : name;
         }
         items[items.length - 1] = context.getString(R.string.customvalue);
         new MaterialAlertDialogBuilder(context)
@@ -458,7 +583,7 @@ public class Wifi extends Fragment {
                     if (i == items.length - 1) {
                         promptCustomWifiInterface();
                     } else {
-                        applyWifiInterface(items[i]);
+                        applyWifiInterface(interfaces.get(i));
                     }
                 })
                 .show();
@@ -495,7 +620,14 @@ public class Wifi extends Fragment {
         wlan = iface;
         ifaceValue.setText(iface);
         ifaceMeta.setText(iface);
+        bindCoreToInterface();
         scan();
+    }
+
+    private void bindCoreToInterface() {
+        if (core == null) return;
+        String selected = core.getString("wlan_wifi");
+        com.zalexdev.stryker.engine.WifiEngine.bindFor(core.overrideEngine(null), selected);
     }
 
     public boolean wifienabled() {

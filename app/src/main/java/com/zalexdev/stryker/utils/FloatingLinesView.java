@@ -12,7 +12,6 @@ import android.opengl.EGLSurface;
 import android.opengl.GLES20;
 import android.os.SystemClock;
 import android.util.AttributeSet;
-import android.util.Log;
 import android.view.TextureView;
 import android.view.View;
 
@@ -26,6 +25,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 import java.util.Locale;
+import com.stryker.terminal.bridge.StrykerLog;
 
 public class FloatingLinesView extends TextureView
         implements TextureView.SurfaceTextureListener, EffectBackdrop {
@@ -439,7 +439,7 @@ public class FloatingLinesView extends TextureView
                 if (!initEgl()) return;
                 loop();
             } catch (Throwable t) {
-                Log.w(TAG, "render thread stopped: " + t);
+                StrykerLog.w(TAG, "render thread stopped: " + t);
             } finally {
                 releaseEgl();
             }
@@ -604,12 +604,12 @@ public class FloatingLinesView extends TextureView
             int[] attribs = {EGL14.EGL_NONE};
             eglSurface = EGL14.eglCreateWindowSurface(eglDisplay, eglConfig, surfaceTexture, attribs, 0);
             if (eglSurface == null || eglSurface == EGL14.EGL_NO_SURFACE) {
-                Log.w(TAG, "eglCreateWindowSurface failed: 0x" + Integer.toHexString(EGL14.eglGetError()));
+                StrykerLog.w(TAG, "eglCreateWindowSurface failed: 0x" + Integer.toHexString(EGL14.eglGetError()));
                 eglSurface = EGL14.EGL_NO_SURFACE;
                 return false;
             }
             if (!EGL14.eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext)) {
-                Log.w(TAG, "eglMakeCurrent failed: 0x" + Integer.toHexString(EGL14.eglGetError()));
+                StrykerLog.w(TAG, "eglMakeCurrent failed: 0x" + Integer.toHexString(EGL14.eglGetError()));
                 return false;
             }
             EGL14.eglSwapInterval(eglDisplay, 0);
@@ -641,7 +641,7 @@ public class FloatingLinesView extends TextureView
             int[] found = new int[1];
             if (!EGL14.eglChooseConfig(eglDisplay, configAttribs, 0, configs, 0, 1, found, 0)
                     || found[0] <= 0) {
-                Log.w(TAG, "no suitable EGL config");
+                StrykerLog.w(TAG, "no suitable EGL config");
                 return false;
             }
             eglConfig = configs[0];
@@ -649,7 +649,7 @@ public class FloatingLinesView extends TextureView
             int[] contextAttribs = {EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE};
             eglContext = EGL14.eglCreateContext(eglDisplay, eglConfig, EGL14.EGL_NO_CONTEXT, contextAttribs, 0);
             if (eglContext == null || eglContext == EGL14.EGL_NO_CONTEXT) {
-                Log.w(TAG, "eglCreateContext failed: 0x" + Integer.toHexString(EGL14.eglGetError()));
+                StrykerLog.w(TAG, "eglCreateContext failed: 0x" + Integer.toHexString(EGL14.eglGetError()));
                 eglContext = EGL14.EGL_NO_CONTEXT;
                 return false;
             }
@@ -931,7 +931,7 @@ public class FloatingLinesView extends TextureView
         int[] linked = new int[1];
         GLES20.glGetProgramiv(program, GLES20.GL_LINK_STATUS, linked, 0);
         if (linked[0] == 0) {
-            Log.w(TAG, "link failed: " + GLES20.glGetProgramInfoLog(program));
+            StrykerLog.w(TAG, "link failed: " + GLES20.glGetProgramInfoLog(program));
             GLES20.glDeleteProgram(program);
             return 0;
         }
@@ -947,7 +947,7 @@ public class FloatingLinesView extends TextureView
         int[] status = new int[1];
         GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, status, 0);
         if (status[0] == 0) {
-            Log.w(TAG, "compile failed: " + GLES20.glGetShaderInfoLog(shader));
+            StrykerLog.w(TAG, "compile failed: " + GLES20.glGetShaderInfoLog(shader));
             GLES20.glDeleteShader(shader);
             return 0;
         }

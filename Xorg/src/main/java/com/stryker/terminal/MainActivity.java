@@ -20,7 +20,6 @@ import android.os.SystemClock;
 import android.text.InputType;
 import android.text.SpannedString;
 import android.util.DisplayMetrics;
-import android.util.Log;
 import android.view.*;
 import android.view.View.OnKeyListener;
 import android.view.inputmethod.InputMethodManager;
@@ -32,6 +31,7 @@ import com.stryker.terminal.xorg.R;
 import java.util.LinkedList;
 import java.util.TreeSet;
 import java.util.concurrent.Semaphore;
+import com.stryker.terminal.bridge.StrykerLog;
 
 
 public class MainActivity extends AppCompatActivity implements NeoXorgViewClient {
@@ -47,7 +47,7 @@ public class MainActivity extends AppCompatActivity implements NeoXorgViewClient
       getWindow().setFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
         WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-    Log.i("SDL", "libSDL: Creating startup screen");
+    StrykerLog.i("SDL", "libSDL: Creating startup screen");
     _layout = new LinearLayout(this);
     _layout.setOrientation(LinearLayout.VERTICAL);
     _layout.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.FILL_PARENT, ViewGroup.LayoutParams.FILL_PARENT));
@@ -72,7 +72,7 @@ public class MainActivity extends AppCompatActivity implements NeoXorgViewClient
 
         public void onClick(View v) {
           setUpStatusLabel();
-          Log.i("SDL", "libSDL: User clicked change phone config button");
+          StrykerLog.i("SDL", "libSDL: User clicked change phone config button");
           loadedLibraries.acquireUninterruptibly();
           setScreenOrientation();
           SettingsMenu.showConfig(p, false);
@@ -120,10 +120,10 @@ public class MainActivity extends AppCompatActivity implements NeoXorgViewClient
         ;
 
         if (p.mAudioThread == null) {
-          Log.i("SDL", "libSDL: Loading libraries");
+          StrykerLog.i("SDL", "libSDL: Loading libraries");
           p.LoadLibraries();
           p.mAudioThread = new AudioThread(p);
-          Log.i("SDL", "libSDL: Loading settings");
+          StrykerLog.i("SDL", "libSDL: Loading settings");
           final Semaphore loaded = new Semaphore(0);
           class Callback2 implements Runnable {
             public MainActivity Parent;
@@ -151,7 +151,7 @@ public class MainActivity extends AppCompatActivity implements NeoXorgViewClient
 
         if (!Settings.settingsChanged) {
           if (Globals.StartupMenuButtonTimeout > 0) {
-            Log.i("SDL", "libSDL: " + String.valueOf(Globals.StartupMenuButtonTimeout) + "-msec timeout in startup screen");
+            StrykerLog.i("SDL", "libSDL: " + String.valueOf(Globals.StartupMenuButtonTimeout) + "-msec timeout in startup screen");
             try {
               Thread.sleep(Globals.StartupMenuButtonTimeout);
             } catch (InterruptedException e) {
@@ -196,13 +196,13 @@ public class MainActivity extends AppCompatActivity implements NeoXorgViewClient
           Globals.HorizontalOrientation = isCurrentOrientationHorizontal();
         while (isCurrentOrientationHorizontal() != Globals.HorizontalOrientation ||
           ((KeyguardManager) getSystemService(Context.KEYGUARD_SERVICE)).inKeyguardRestrictedInputMode()) {
-          Log.d("SDL", "libSDL: Waiting for screen orientation to change to " + (Globals.HorizontalOrientation ? "landscape" : "portrait") + ", and for disabling lockscreen mode");
+          StrykerLog.d("SDL", "libSDL: Waiting for screen orientation to change to " + (Globals.HorizontalOrientation ? "landscape" : "portrait") + ", and for disabling lockscreen mode");
           try {
             Thread.sleep(500);
           } catch (Exception e) {
           }
           if (_isPaused) {
-            Log.i("SDL", "libSDL: Application paused, cancelling SDL initialization until it will be brought to foreground");
+            StrykerLog.i("SDL", "libSDL: Application paused, cancelling SDL initialization until it will be brought to foreground");
             return;
           }
           DimSystemStatusBar.get().dim(_videoLayout);
@@ -228,7 +228,7 @@ public class MainActivity extends AppCompatActivity implements NeoXorgViewClient
   private void initSDLInternal() {
     if (sdlInited)
       return;
-    Log.i("SDL", "libSDL: Initializing video and SDL application");
+    StrykerLog.i("SDL", "libSDL: Initializing video and SDL application");
 
     sdlInited = true;
     DimSystemStatusBar.get().dim(_videoLayout);
@@ -318,7 +318,7 @@ public class MainActivity extends AppCompatActivity implements NeoXorgViewClient
         _videoLayout.getWindowVisibleDisplayFrame(r);
         final int heightDiff = _videoLayout.getRootView().getHeight() - _videoLayout.getHeight();
         final int widthDiff = _videoLayout.getRootView().getWidth() - _videoLayout.getWidth();
-        Log.v("SDL", "Main window visible region changed: " + r.left + ":" + r.top + ":" + r.width() + ":" + r.height());
+        StrykerLog.v("SDL", "Main window visible region changed: " + r.left + ":" + r.top + ":" + r.width() + ":" + r.height());
         _videoLayout.postDelayed(new Runnable() {
           public void run() {
             DimSystemStatusBar.get().dim(_videoLayout);
@@ -359,7 +359,7 @@ public class MainActivity extends AppCompatActivity implements NeoXorgViewClient
   @Override
   public void onWindowFocusChanged(boolean hasFocus) {
     super.onWindowFocusChanged(hasFocus);
-    Log.i("SDL", "libSDL: onWindowFocusChanged: " + hasFocus + " - sending onPause/onResume");
+    StrykerLog.i("SDL", "libSDL: onWindowFocusChanged: " + hasFocus + " - sending onPause/onResume");
     if (!hasFocus)
       onPause();
     else
@@ -746,7 +746,7 @@ public class MainActivity extends AppCompatActivity implements NeoXorgViewClient
 
   @Override
   public void onNewIntent(Intent i) {
-    Log.i("SDL", "onNewIntent(): " + i.toString());
+    StrykerLog.i("SDL", "onNewIntent(): " + i.toString());
     super.onNewIntent(i);
     setIntent(i);
   }
@@ -756,23 +756,23 @@ public class MainActivity extends AppCompatActivity implements NeoXorgViewClient
     try {
       if (Globals.NeedGles3) {
         System.loadLibrary("GLESv3");
-        Log.i("SDL", "libSDL: loaded GLESv3 lib");
+        StrykerLog.i("SDL", "libSDL: loaded GLESv3 lib");
       } else if (Globals.NeedGles2) {
         System.loadLibrary("GLESv2");
-        Log.i("SDL", "libSDL: loaded GLESv2 lib");
+        StrykerLog.i("SDL", "libSDL: loaded GLESv2 lib");
       }
     } catch (UnsatisfiedLinkError e) {
-      Log.i("SDL", "libSDL: Cannot load GLESv3 or GLESv2 lib");
+      StrykerLog.i("SDL", "libSDL: Cannot load GLESv3 or GLESv2 lib");
     }
 
     try {
       for (String libname : Globals.XLIBS) {
         String soPath = Globals.XLIB_DIR + libname;
-        Log.i("SDL", "libSDL: loading lib " + soPath);
+        StrykerLog.i("SDL", "libSDL: loading lib " + soPath);
         try {
           System.load(soPath);
         } catch (UnsatisfiedLinkError error) {
-          Log.i("SDL", "libSDL: error loading lib " + soPath
+          StrykerLog.i("SDL", "libSDL: error loading lib " + soPath
             + ", reason: " + error.getLocalizedMessage());
         }
       }
@@ -786,17 +786,17 @@ public class MainActivity extends AppCompatActivity implements NeoXorgViewClient
     try {
       for (String libname : Globals.XAPP_LIBS) {
         String soPath = Globals.XLIB_DIR + libname;
-        Log.i("SDL", "libSDL: loading lib " + soPath);
+        StrykerLog.i("SDL", "libSDL: loading lib " + soPath);
         try {
           System.load(soPath);
         } catch (UnsatisfiedLinkError error) {
-          Log.i("SDL", "libSDL: error loading lib " + soPath
+          StrykerLog.i("SDL", "libSDL: error loading lib " + soPath
             + ", reason: " + error.getLocalizedMessage());
         }
       }
     } catch (UnsatisfiedLinkError ignore) {
     }
-    Log.v("SDL", "libSDL: loaded all libraries");
+    StrykerLog.v("SDL", "libSDL: loaded all libraries");
     ApplicationLibraryLoaded = true;
   }
 
@@ -805,7 +805,7 @@ public class MainActivity extends AppCompatActivity implements NeoXorgViewClient
       PackageInfo packageInfo = getPackageManager().getPackageInfo(getPackageName(), 0);
       return packageInfo.versionCode;
     } catch (PackageManager.NameNotFoundException e) {
-      Log.i("SDL", "libSDL: Cannot get the version of our own package: " + e);
+      StrykerLog.i("SDL", "libSDL: Cannot get the version of our own package: " + e);
     }
     return 0;
   }
@@ -848,14 +848,14 @@ public class MainActivity extends AppCompatActivity implements NeoXorgViewClient
   @Override
   public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
     if (permissions.length == 0 || grantResults.length == 0) {
-      Log.i("SDL", "libSDL: Permission request dialog was aborted");
+      StrykerLog.i("SDL", "libSDL: Permission request dialog was aborted");
       return;
     }
     if (Manifest.permission.RECORD_AUDIO.equals(permissions[0])) {
-      Log.i("SDL", "libSDL: Record audio permission: " + (grantResults[0] == PackageManager.PERMISSION_GRANTED ? "GRANTED" : "DENIED"));
+      StrykerLog.i("SDL", "libSDL: Record audio permission: " + (grantResults[0] == PackageManager.PERMISSION_GRANTED ? "GRANTED" : "DENIED"));
     }
     if (Manifest.permission.WRITE_EXTERNAL_STORAGE.equals(permissions[0])) {
-      Log.i("SDL", "libSDL: Write external storage permission: " + (grantResults[0] == PackageManager.PERMISSION_GRANTED ? "GRANTED" : "DENIED"));
+      StrykerLog.i("SDL", "libSDL: Write external storage permission: " + (grantResults[0] == PackageManager.PERMISSION_GRANTED ? "GRANTED" : "DENIED"));
       writeExternalStoragePermissionDialogAnswered = true;
     }
   }

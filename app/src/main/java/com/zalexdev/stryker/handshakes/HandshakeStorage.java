@@ -34,6 +34,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import com.stryker.terminal.bridge.StrykerLog;
 
 public class HandshakeStorage extends Fragment {
 
@@ -198,7 +199,7 @@ public class HandshakeStorage extends Fragment {
                     uris.add(FileProvider.getUriForFile(
                             context, context.getPackageName() + ".provider", f));
                 } catch (Exception e) {
-                    android.util.Log.w("HandshakeStorage", "cannot share " + f.getName(), e);
+                    StrykerLog.w("HandshakeStorage", "cannot share " + f.getName(), e);
                 }
             }
         }

@@ -1,7 +1,6 @@
 package com.zalexdev.stryker.engine;
 
 import android.content.Context;
-import android.util.Log;
 
 import com.jcraft.jsch.ChannelExec;
 import com.jcraft.jsch.ChannelShell;
@@ -16,6 +15,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import com.stryker.terminal.bridge.StrykerLog;
 
 public final class GuestSsh {
 
@@ -33,6 +33,37 @@ public final class GuestSsh {
 
     private static Session session;
     private static final Object LOCK = new Object();
+
+    private static volatile long lastLoss;
+
+    public static long lastLossAt() {
+        return lastLoss;
+    }
+
+    static void noteUnreachable() {
+        lastLoss = System.currentTimeMillis();
+    }
+
+    static void dropIfDead() {
+        synchronized (LOCK) {
+            lastLoss = System.currentTimeMillis();
+            Session s = session;
+            if (s != null && !s.isConnected()) {
+                try { s.disconnect(); } catch (Exception ignored) {}
+                session = null;
+            }
+        }
+    }
+
+    static void noteSessionLost() {
+        synchronized (LOCK) {
+            lastLoss = System.currentTimeMillis();
+            if (session != null) {
+                try { session.disconnect(); } catch (Exception ignored) {}
+                session = null;
+            }
+        }
+    }
 
     private GuestSsh() {}
 
@@ -58,7 +89,7 @@ public final class GuestSsh {
 
         JSch jsch = new JSch();
         if (!writeKeypair(jsch, KeyPair.ED25519, 0)) {
-            Log.i(TAG, "Ed25519 cannot be stored by this jsch build; using RSA");
+            StrykerLog.i(TAG, "Ed25519 cannot be stored by this jsch build; using RSA");
             if (!writeKeypair(jsch, KeyPair.RSA, 3072)) {
                 throw new JSchException("could not generate a usable keypair for the guest");
             }
@@ -67,7 +98,7 @@ public final class GuestSsh {
         priv.setReadable(false, false);
         priv.setReadable(true, true);
         priv.setWritable(false, false);
-        Log.i(TAG, "generated a new keypair for the guest");
+        StrykerLog.i(TAG, "generated a new keypair for the guest");
     }
 
     private static boolean writeKeypair(JSch jsch, int type, int bits) {
@@ -78,7 +109,7 @@ public final class GuestSsh {
             kp.writePublicKey(publicKey().getAbsolutePath(), "stryker@" + android.os.Build.MODEL);
             return privateKey().length() > 0 && publicKey().length() > 0;
         } catch (Throwable t) {
-            Log.i(TAG, "keypair type " + type + " unusable here: " + t);
+            StrykerLog.i(TAG, "keypair type " + type + " unusable here: " + t);
             privateKey().delete();
             publicKey().delete();
             return false;
@@ -136,27 +167,56 @@ public final class GuestSsh {
             if (appContext == null) throw new JSchException("GuestSsh has no context yet");
             ensureKeypair();
 
-            byte[] hosts = knownHosts();
-            if (hosts == null) {
-                throw new JSchException("the guest has not published its host key yet"
-                        + " -- it writes " + SHARE_SSH_DIR + "/" + SHARE_HOST_KEYS
-                        + " into the share once stryker-guest-init has run");
+            JSchException last = null;
+            for (int attempt = 0; attempt < 2; attempt++) {
+                try {
+                    return connectOnce();
+                } catch (JSchException e) {
+                    last = e;
+                    noteSessionLost();
+                    if (!looksLikeHostKeyTrouble(e)) break;
+                    StrykerLog.w(TAG, "host key was rejected, re-reading the guest's copy: "
+                            + e.getMessage());
+                    sleep(1200);
+                }
             }
-
-            JSch jsch = new JSch();
-            jsch.addIdentity(privateKey().getAbsolutePath());
-            jsch.setKnownHosts(new ByteArrayInputStream(hosts));
-
-            Session s = jsch.getSession(USER, RootlessPaths.HOST_LOOPBACK, port);
-            s.setConfig("StrictHostKeyChecking", "yes");
-            s.setConfig("PreferredAuthentications", "publickey");
-            s.setServerAliveInterval(15_000);
-            s.setServerAliveCountMax(4);
-            s.connect(20_000);
-            session = s;
-            Log.i(TAG, "connected to the guest over ssh on port " + port);
-            return s;
+            throw last == null ? new JSchException("could not open a session to the guest") : last;
         }
+    }
+
+    private static Session connectOnce() throws JSchException, IOException {
+        byte[] hosts = knownHosts();
+        if (hosts == null) {
+            throw new JSchException("the guest has not published its host key yet"
+                    + " -- it writes " + SHARE_SSH_DIR + "/" + SHARE_HOST_KEYS
+                    + " into the share once stryker-guest-init has run");
+        }
+
+        JSch jsch = new JSch();
+        jsch.addIdentity(privateKey().getAbsolutePath());
+        jsch.setKnownHosts(new ByteArrayInputStream(hosts));
+
+        Session s = jsch.getSession(USER, RootlessPaths.HOST_LOOPBACK, port);
+        s.setConfig("StrictHostKeyChecking", "yes");
+        s.setConfig("PreferredAuthentications", "publickey");
+        s.setServerAliveInterval(15_000);
+        s.setServerAliveCountMax(4);
+        s.connect(20_000);
+        session = s;
+        StrykerLog.i(TAG, "connected to the guest over ssh on port " + port);
+        return s;
+    }
+
+    private static boolean looksLikeHostKeyTrouble(JSchException e) {
+        String m = e.getMessage();
+        if (m == null) return false;
+        String lower = m.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("hostkey") || lower.contains("host key")
+                || lower.contains("reject") || lower.contains("not published");
+    }
+
+    private static void sleep(long ms) {
+        try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     }
 
     public static ChannelExec exec(String command) throws JSchException, IOException {
@@ -184,10 +244,10 @@ public final class GuestSsh {
             Session s = session();
             try { s.delPortForwardingL(hostPort); } catch (Exception ignored) {}
             s.setPortForwardingL(RootlessPaths.HOST_LOOPBACK, hostPort, "127.0.0.1", guestPort);
-            Log.i(TAG, "forwarded 127.0.0.1:" + hostPort + " to guest port " + guestPort);
+            StrykerLog.i(TAG, "forwarded 127.0.0.1:" + hostPort + " to guest port " + guestPort);
             return true;
         } catch (Exception e) {
-            Log.w(TAG, "cannot forward port " + hostPort + ": " + e.getMessage());
+            StrykerLog.w(TAG, "cannot forward port " + hostPort + ": " + e.getMessage());
             return false;
         }
     }
@@ -203,29 +263,46 @@ public final class GuestSsh {
         }
     }
 
+    private static final long PING_REPORT_EVERY_MS = 10_000L;
+    private static volatile long lastPingReport;
+    private static volatile String lastPingFailure;
+
     public static boolean ping(int timeoutMs) {
+        String stage = "session";
         try {
             ChannelExec c = exec("echo __STRYKER_PONG__");
+            stage = "channel";
             try {
                 c.connect(Math.max(timeoutMs, 1000));
+                stage = "reply";
                 byte[] buf = new byte[64];
                 int n = c.getInputStream().read(buf);
-                return n > 0 && new String(buf, 0, n, StandardCharsets.UTF_8).contains("__STRYKER_PONG__");
+                boolean ok = n > 0
+                        && new String(buf, 0, n, StandardCharsets.UTF_8).contains("__STRYKER_PONG__");
+                if (ok && lastPingFailure != null) {
+                    StrykerLog.i(TAG, "guest is answering again");
+                    lastPingFailure = null;
+                }
+                return ok;
             } finally {
                 c.disconnect();
             }
         } catch (Exception e) {
+            noteUnreachable();
+            String why = stage + ": " + e.getClass().getSimpleName()
+                    + (e.getMessage() == null ? "" : " " + e.getMessage());
+            long now = System.currentTimeMillis();
+            if (!why.equals(lastPingFailure) || now - lastPingReport > PING_REPORT_EVERY_MS) {
+                lastPingFailure = why;
+                lastPingReport = now;
+                StrykerLog.w(TAG, "ping failed at " + why);
+            }
             return false;
         }
     }
 
     public static void disconnect() {
-        synchronized (LOCK) {
-            if (session != null) {
-                try { session.disconnect(); } catch (Exception ignored) {}
-                session = null;
-            }
-        }
+        noteSessionLost();
     }
 
     public static boolean isConnected() {

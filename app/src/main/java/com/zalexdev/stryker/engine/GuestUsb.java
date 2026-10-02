@@ -18,6 +18,8 @@ public interface GuestUsb {
 
     boolean hasPermission(UsbDevice device);
 
+    boolean requestPermission(UsbDevice device, long waitMs);
+
     boolean isAttached(UsbDevice device);
 
     boolean hasAttached();

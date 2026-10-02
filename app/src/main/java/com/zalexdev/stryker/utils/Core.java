@@ -34,7 +34,6 @@ import android.os.Vibrator;
 import android.preference.PreferenceManager;
 import android.text.TextUtils;
 import android.text.format.Formatter;
-import android.util.Log;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -87,6 +86,7 @@ import java.util.HashSet;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.UUID;
+import com.stryker.terminal.bridge.StrykerLog;
 
 
 public class Core {
@@ -111,6 +111,18 @@ public class Core {
     public SQLiteDatabase db;
     public SQLiteDatabase dbCodename;
     public SQLiteDatabase dbAdapters;
+
+    private com.zalexdev.stryker.engine.EngineType engineOverride;
+
+    public Core overrideEngine(com.zalexdev.stryker.engine.EngineType type) {
+        this.engineOverride = type;
+        return this;
+    }
+
+    public com.zalexdev.stryker.engine.EngineType engineOverride() {
+        return engineOverride;
+    }
+
     public Core(Context context) {
 
         SharedPreferences preferences1;
@@ -898,27 +910,53 @@ public class Core {
     }
 
 
-    public boolean checkFile(String path){
-        logger.writeLine("Checking file "+path,1);
+    public enum Presence { YES, NO, UNKNOWN }
+
+    private static final String PROBE_MARK = "__STRYKER_PROBE__";
+    private static final int PROBE_ATTEMPTS = 3;
+    private static final long PROBE_RETRY_MS = 1200;
+
+    private Presence probe(String test, String path) {
+        logger.writeLine("Checking " + ("-d".equals(test) ? "folder " : "file ") + path, 1);
         if (isRootless()) {
-            return new File(path).isFile();
+            File f = new File(path);
+            boolean there = "-d".equals(test) ? f.isDirectory() : f.isFile();
+            return there ? Presence.YES : Presence.NO;
         }
-        return customCommand("[ -f " + path + " ] && echo true || echo false").contains("true");
+        String cmd = "printf '" + PROBE_MARK + "%s\\n' \"$([ " + test + " " + path
+                + " ] && echo 1 || echo 0)\"";
+        for (int attempt = 0; attempt < PROBE_ATTEMPTS; attempt++) {
+            for (String line : customCommand(cmd, true)) {
+                if (line == null) continue;
+                int at = line.indexOf(PROBE_MARK);
+                if (at < 0) continue;
+                String value = line.substring(at + PROBE_MARK.length()).trim();
+                if (value.startsWith("1")) return Presence.YES;
+                if (value.startsWith("0")) return Presence.NO;
+            }
+            if (attempt + 1 < PROBE_ATTEMPTS) {
+                try {
+                    Thread.sleep(PROBE_RETRY_MS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        logger.writeLine("No answer from su about " + path + " — treating it as unknown", 3);
+        return Presence.UNKNOWN;
+    }
+
+    public Presence probeFile(String path)   { return probe("-f", path); }
+
+    public Presence probeFolder(String path) { return probe("-d", path); }
+
+    public boolean checkFile(String path){
+        return probeFile(path) == Presence.YES;
     }
 
     public boolean checkFolder(String path){
-        boolean ok = false;
-        logger.writeLine("Checking folder "+path,1);
-        if (isRootless()) {
-            return new File(path).isDirectory();
-        }
-        for (String s : customCommand("[ -d " + path + " ] && echo true || echo false")) {
-            if (s.contains("true")) {
-                ok = true;
-                break;
-            }
-        }
-        return ok;
+        return probeFolder(path) == Presence.YES;
     }
     public boolean checkMagiskNotification(){
         reCreateProcess();
@@ -1142,7 +1180,7 @@ public class Core {
             while ((r = in.read(buf)) != -1) os.write(buf, 0, r);
             os.flush();
         } catch (IOException e) {
-            Log.e("Core", "Failed to extract " + BUSYBOX_ASSET, e);
+            StrykerLog.e("Core", "Failed to extract " + BUSYBOX_ASSET, e);
             tmp.delete();
             return out.length() > 0 && out.canExecute();
         }
@@ -1256,7 +1294,8 @@ public class Core {
             }
             Cursor cursor = db.rawQuery("select MacPrefix,VendorName from macvendor where MacPrefix LIKE '%"+mac.substring(0,8).toUpperCase(Locale.ROOT)+"%' COLLATE NOCASE", null);
             if (cursor.moveToFirst()) {
-                vendor = cursor.getString(1);
+                String name = cursor.getString(1);
+                if (name != null) vendor = name;
             }
             cursor.close();
 
@@ -1275,7 +1314,11 @@ public class Core {
             Cursor cursor = dbCodename.rawQuery("SELECT manufacture,model FROM codename WHERE codename = '"+codename+"';", null);
 
             if (cursor.moveToFirst()) {
-                model = cursor.getString(0)+" "+cursor.getString(1).replace(cursor.getString(0),"");
+                String make = cursor.getString(0);
+                String name = cursor.getString(1);
+                if (make == null) make = "";
+                if (name == null) name = "";
+                model = (make + " " + (make.isEmpty() ? name : name.replace(make, ""))).trim();
             }
             cursor.close();
 
@@ -1283,20 +1326,15 @@ public class Core {
         } catch (Exception e) {
             e.printStackTrace();
         }
-        try {
-            return toTitleCase(model);
-        } catch (NullPointerException ignored) {
-            return model;
-        }
+        return toTitleCase(model);
     }
-    public static String toTitleCase(String givenString) throws NullPointerException {
-        String[] arr = givenString.toLowerCase(Locale.ROOT).split(" ");
+    public static String toTitleCase(String givenString) {
+        if (givenString == null) return "";
         StringBuilder sb = new StringBuilder();
-        for (String s : arr) {
-            if (s.length() > 1) {
-                sb.append(Character.toUpperCase(s.charAt(0)))
-                        .append(s.substring(1)).append(" ");
-            }
+        for (String word : givenString.toLowerCase(Locale.ROOT).split(" ")) {
+            if (word.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(' ');
+            sb.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
         }
         return sb.toString();
     }

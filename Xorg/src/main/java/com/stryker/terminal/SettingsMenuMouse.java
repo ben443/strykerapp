@@ -5,7 +5,6 @@ import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Matrix;
 import android.graphics.RectF;
-import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
@@ -15,6 +14,7 @@ import androidx.appcompat.app.AlertDialog;
 import com.stryker.terminal.xorg.R;
 
 import java.util.ArrayList;
+import com.stryker.terminal.bridge.StrykerLog;
 
 
 class SettingsMenuMouse extends SettingsMenu {
@@ -577,7 +577,7 @@ class SettingsMenuMouse extends SettingsMenu {
           p.getVideoLayout().setOnTouchListener(null);
           Globals.ClickScreenPressure = getAverageForce();
           Globals.ClickScreenTouchspotSize = getAverageRadius();
-          Log.i("SDL", "SDL: measured average force " + Globals.ClickScreenPressure + " radius " + Globals.ClickScreenTouchspotSize);
+          StrykerLog.i("SDL", "SDL: measured average force " + Globals.ClickScreenPressure + " radius " + Globals.ClickScreenTouchspotSize);
           goBack(p);
         }
         return true;

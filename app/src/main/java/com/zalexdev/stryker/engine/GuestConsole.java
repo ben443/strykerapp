@@ -2,12 +2,12 @@ package com.zalexdev.stryker.engine;
 
 import android.net.LocalSocket;
 import android.net.LocalSocketAddress;
-import android.util.Log;
 
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import com.stryker.terminal.bridge.StrykerLog;
 
 final class GuestConsole {
 
@@ -42,7 +42,7 @@ final class GuestConsole {
             }
             collect(buf.toString(), out);
         } catch (Exception e) {
-            Log.w(TAG, "console command failed: " + e.getMessage());
+            StrykerLog.w(TAG, "console command failed: " + e.getMessage());
         } finally {
             try { sock.close(); } catch (Exception ignored) {}
         }

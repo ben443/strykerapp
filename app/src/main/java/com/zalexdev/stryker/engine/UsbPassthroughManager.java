@@ -12,7 +12,6 @@ import android.hardware.usb.UsbInterface;
 import android.hardware.usb.UsbManager;
 import android.os.Build;
 import android.os.ParcelFileDescriptor;
-import android.util.Log;
 import androidx.core.content.ContextCompat;
 
 import org.json.JSONException;
@@ -22,11 +21,14 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import com.stryker.terminal.bridge.StrykerLog;
 
 public final class UsbPassthroughManager implements GuestUsb {
 
     private static final String TAG = "UsbPassthrough";
     private static final String ACTION_USB_PERMISSION = "com.zalexdev.stryker.USB_PERMISSION";
+
+    private static final long PERMISSION_WAIT_MS = 30_000;
 
     private final Context context;
     private final UsbManager usbManager;
@@ -88,10 +90,13 @@ public final class UsbPassthroughManager implements GuestUsb {
         } catch (NumberFormatException e) {
             return null;
         }
+        UsbDevice first = null;
         for (UsbDevice d : usbManager.getDeviceList().values()) {
-            if (d.getVendorId() == vid && d.getProductId() == pid) return d;
+            if (d.getVendorId() != vid || d.getProductId() != pid) continue;
+            if (first == null) first = d;
+            if (!isAttached(d)) return d;
         }
-        return null;
+        return first;
     }
 
     @Override
@@ -132,13 +137,25 @@ public final class UsbPassthroughManager implements GuestUsb {
         });
     }
 
-    @Override
-    public synchronized boolean attach(UsbDevice device) {
-        if (device == null || qmp == null) return false;
+     @Override
+     public boolean attach(UsbDevice device) {
+         if (device == null || qmp == null) return false;
+         if (isAttached(device)) return true;
+         if (!hasPermission(device)
+                 && (!requestPermissionBlocking(device, PERMISSION_WAIT_MS)
+                         || !hasPermission(device))) {
+             GuestExec.logToStore("USB: permission was not granted for "
+                     + UsbHostAccess.describe(device));
+             return false;
+         }
+         return attachGranted(device);
+     }
+
+    private synchronized boolean attachGranted(UsbDevice device) {
         if (attached.containsKey(device.getDeviceId())) return true;
         UsbDeviceConnection connection = usbManager.openDevice(device);
         if (connection == null) {
-            Log.w(TAG, "openDevice returned null for " + device.getDeviceName());
+            StrykerLog.w(TAG, "openDevice returned null for " + device.getDeviceName());
             return false;
         }
         claimInterfaces(device, connection);
@@ -177,7 +194,7 @@ public final class UsbPassthroughManager implements GuestUsb {
         }
         registerReceiver();
         attached.put(device.getDeviceId(), new Attached(connection, pfd, fdSetId, qemuId));
-        Log.i(TAG, "Attached USB device " + device.getDeviceName() + " as " + qemuId);
+        StrykerLog.i(TAG, "Attached USB device " + device.getDeviceName() + " as " + qemuId);
         return true;
     }
 
@@ -192,7 +209,7 @@ public final class UsbPassthroughManager implements GuestUsb {
                 ok = false;
             }
             if (ok) continue;
-            Log.w(TAG, "claimInterface " + iface.getId() + " failed on " + device.getDeviceName());
+            StrykerLog.w(TAG, "claimInterface " + iface.getId() + " failed on " + device.getDeviceName());
             GuestExec.logToStore("USB: could not claim interface " + iface.getId() + " of "
                     + device.getDeviceName() + " — an Android driver still holds it, the guest will "
                     + "only get endpoint 0");
@@ -259,7 +276,7 @@ public final class UsbPassthroughManager implements GuestUsb {
             if (isAttached(d)) { ok++; continue; }
             if (!usbManager.hasPermission(d)
                     && (!requestPermissionBlocking(d, waitMs) || !usbManager.hasPermission(d))) {
-                Log.w(TAG, "USB permission not granted for " + d.getDeviceName());
+                StrykerLog.w(TAG, "USB permission not granted for " + d.getDeviceName());
                 continue;
             }
             if (attach(d)) ok++;
@@ -272,17 +289,31 @@ public final class UsbPassthroughManager implements GuestUsb {
         return picks.isEmpty() ? null : picks.get(0);
     }
 
+    static final Object PERMISSION_LOCK = new Object();
+
+    @Override
+    public boolean requestPermission(UsbDevice device, long waitMs) {
+        if (usbManager == null || device == null) return false;
+        if (usbManager.hasPermission(device)) return true;
+        requestPermissionBlocking(device, waitMs);
+        return usbManager.hasPermission(device);
+    }
+
     private boolean requestPermissionBlocking(UsbDevice device, long waitMs) {
-        pendingPermission = new CountDownLatch(1);
-        awaitingDeviceId = device.getDeviceId();
-        registerReceiver();
-        usbManager.requestPermission(device, permissionIntent(device));
-        try {
-            return pendingPermission.await(waitMs, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException e) {
-            return false;
-        } finally {
-            awaitingDeviceId = -1;
+        synchronized (PERMISSION_LOCK) {
+            if (usbManager.hasPermission(device)) return true;
+            pendingPermission = new CountDownLatch(1);
+            awaitingDeviceId = device.getDeviceId();
+            registerReceiver();
+            usbManager.requestPermission(device, permissionIntent(device));
+            try {
+                return pendingPermission.await(waitMs, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            } finally {
+                awaitingDeviceId = -1;
+            }
         }
     }
 

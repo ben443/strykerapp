@@ -1,6 +1,5 @@
 package com.zalexdev.stryker.engine;
 
-import android.util.Log;
 
 import com.jcraft.jsch.ChannelExec;
 
@@ -10,6 +9,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import com.stryker.terminal.bridge.StrykerLog;
 
 public final class GuestExec {
 
@@ -73,15 +73,18 @@ public final class GuestExec {
                 out.add(line);
             }
         } catch (java.net.SocketTimeoutException te) {
-            Log.w(TAG, "run timed out: " + shortCmd(command));
+            StrykerLog.w(TAG, "run timed out: " + shortCmd(command));
             logToStore("guest command timed out after " + (READ_TIMEOUT_MS / 1000)
                     + "s with no output (hung?) · " + shortCmd(command));
         } catch (IOException e) {
-            Log.w(TAG, "run failed: " + e.getMessage());
+            StrykerLog.w(TAG, "run failed: " + e.getMessage());
             logToStore("guest exec failed — no ssh session to the guest on :"
                     + RootlessPaths.HOST_SSH_PORT + " (" + e.getMessage() + ") · " + shortCmd(command));
         } finally {
             if (s != null) s.close();
+        }
+        if (out.isEmpty() && (s == null || s.exitCode != 0)) {
+            StrykerLog.w(TAG, "guest command produced no output: " + shortCmd(command));
         }
         return out;
     }
@@ -89,8 +92,23 @@ public final class GuestExec {
     static void logToStore(String msg) {
         try {
             com.zalexdev.stryker.logger.LogStore st = com.zalexdev.stryker.logger.LogStore.peek();
-            if (st != null) st.add(com.zalexdev.stryker.logger.LogEntry.ERR, "guest", msg);
+            if (st != null) st.add(levelOf(msg), "guest", msg);
         } catch (Throwable ignored) {}
+    }
+
+    private static int levelOf(String msg) {
+        if (msg == null) return com.zalexdev.stryker.logger.LogEntry.INFO;
+        String lower = msg.toLowerCase(java.util.Locale.ROOT);
+        if (lower.contains("failed") || lower.contains("could not") || lower.contains("cannot")
+                || lower.contains("unreachable") || lower.contains("timed out")
+                || lower.contains("refused") || lower.contains("no ssh session")) {
+            return com.zalexdev.stryker.logger.LogEntry.ERR;
+        }
+        if (lower.contains("falling back") || lower.contains("retry") || lower.contains("no host")
+                || lower.contains("stray") || lower.contains("bootstrapping")) {
+            return com.zalexdev.stryker.logger.LogEntry.WARN;
+        }
+        return com.zalexdev.stryker.logger.LogEntry.INFO;
     }
 
     private static String shortCmd(String c) {
@@ -114,6 +132,7 @@ public final class GuestExec {
             channel.connect(20_000);
             return new Session(channel, jobId);
         } catch (com.jcraft.jsch.JSchException e) {
+            GuestSsh.dropIfDead();
             throw new IOException(e.getMessage(), e);
         }
     }

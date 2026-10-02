@@ -12,8 +12,14 @@ public enum EngineType {
 
     public static final String PREF_KEY = "engine_type";
 
+    public static final String PREF_VERIFIED = "engine_boot_verified";
+
+    public static final String PREF_FORCED = "engine_forced_unsupported";
+
     public static EngineType active(Core core) {
         if (core == null) return CHROOT;
+        EngineType override = core.engineOverride();
+        if (override != null) return override;
         String v = core.getString(PREF_KEY);
         if (v != null && v.equals(ROOTLESS.name())) return ROOTLESS;
         if (v != null && v.equals(UML.name())) return UML;
@@ -37,6 +43,14 @@ public enum EngineType {
         if (core == null) return false;
         String v = core.getString(PREF_KEY);
         return v != null && !v.isEmpty();
+    }
+
+    public static EngineType configured(Core core) {
+        if (core == null) return CHROOT;
+        String v = core.getString(PREF_KEY);
+        if (v != null && v.equals(ROOTLESS.name())) return ROOTLESS;
+        if (v != null && v.equals(UML.name())) return UML;
+        return CHROOT;
     }
 
     public static void persist(Core core, EngineType type) {

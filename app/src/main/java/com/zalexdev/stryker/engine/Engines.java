@@ -3,6 +3,7 @@ package com.zalexdev.stryker.engine;
 import android.content.Context;
 
 import com.zalexdev.stryker.utils.Core;
+import com.stryker.terminal.bridge.StrykerLog;
 
 public final class Engines {
 
@@ -10,8 +11,13 @@ public final class Engines {
 
     private static volatile UmlEngine umlInstance;
 
+    private static volatile EngineType lastReported;
+
     public static GuestEngine active(Context context, EngineType type) {
-        android.util.Log.i("Engines", "active engine: " + type);
+        if (type != lastReported) {
+            lastReported = type;
+            StrykerLog.i("Engines", "active engine: " + type);
+        }
         if (type == EngineType.UML) return uml(context);
         return RootlessEngine.get(context);
     }

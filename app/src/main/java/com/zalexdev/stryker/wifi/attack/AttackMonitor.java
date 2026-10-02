@@ -79,8 +79,10 @@ public final class AttackMonitor {
     private final TextView consoleView;
     private final TextView consoleCount;
     private final ScrollView consoleScroll;
-    private final ImageView consoleChevron;
     private final ImageView consoleCopy;
+    private final LinearLayout tabBar;
+    private final TextView tabProgress;
+    private final TextView tabTerminal;
     private final TextView resultView;
     private final MaterialButton stopButton;
     private final MaterialButton primaryButton;
@@ -132,8 +134,10 @@ public final class AttackMonitor {
         consoleView = dialog.findViewById(R.id.attack_console);
         consoleCount = dialog.findViewById(R.id.attack_console_count);
         consoleScroll = dialog.findViewById(R.id.attack_console_scroll);
-        consoleChevron = dialog.findViewById(R.id.attack_console_chevron);
         consoleCopy = dialog.findViewById(R.id.attack_console_copy);
+        tabBar = dialog.findViewById(R.id.attack_tabbar);
+        tabProgress = dialog.findViewById(R.id.attack_tab_progress);
+        tabTerminal = dialog.findViewById(R.id.attack_tab_terminal);
         resultView = dialog.findViewById(R.id.attack_result);
         stopButton = dialog.findViewById(R.id.attack_stop);
         primaryButton = dialog.findViewById(R.id.attack_primary);
@@ -156,7 +160,8 @@ public final class AttackMonitor {
             rateView.setAccent(accent);
         }
 
-        dialog.findViewById(R.id.attack_console_header).setOnClickListener(v -> toggleConsole());
+        sizeBody();
+        buildTabs();
         consoleCopy.setOnClickListener(v -> {
             core.copyToClipBoard(consoleDump());
             core.toaster("Console copied");
@@ -528,6 +533,12 @@ public final class AttackMonitor {
         if (seen >= 0) metric(AttackMetric.CLIENTS, seen);
     }
 
+    public java.util.List<String> clientList() {
+        synchronized (clients) {
+            return new java.util.ArrayList<>(clients);
+        }
+    }
+
     public int clientCount() {
         synchronized (clients) {
             return clients.size();
@@ -606,15 +617,51 @@ public final class AttackMonitor {
         }
     }
 
-    private void toggleConsole() {
-        consoleOpen = !consoleOpen;
-        consoleScroll.setVisibility(consoleOpen ? View.VISIBLE : View.GONE);
-        consoleCopy.setVisibility(consoleOpen ? View.VISIBLE : View.GONE);
-        consoleChevron.setRotation(consoleOpen ? 180f : 0f);
-        if (consoleOpen) {
+    private void sizeBody() {
+        View body = dialog.findViewById(R.id.attack_body);
+        if (body == null) return;
+        int screen = activity.getResources().getDisplayMetrics().heightPixels;
+        int height = Math.max(dp(300), Math.min(Math.round(screen * 0.60f), dp(620)));
+        ViewGroup.LayoutParams lp = body.getLayoutParams();
+        if (lp == null) return;
+        lp.height = height;
+        body.setLayoutParams(lp);
+    }
+
+    private void buildTabs() {
+        GradientDrawable track = new GradientDrawable();
+        track.setCornerRadius(dp(13));
+        track.setColor((accent & 0x00FFFFFF) | 0x16000000);
+        tabBar.setBackground(track);
+        tabProgress.setOnClickListener(v -> showConsole(false));
+        tabTerminal.setOnClickListener(v -> showConsole(true));
+        showConsole(false);
+    }
+
+    private void paintTab(TextView tab, boolean selected) {
+        if (selected) {
+            GradientDrawable pill = new GradientDrawable();
+            pill.setCornerRadius(dp(10));
+            pill.setColor(ContextCompat.getColor(activity, R.color.light_contrast));
+            pill.setStroke(dp(1), (accent & 0x00FFFFFF) | 0x33000000);
+            tab.setBackground(pill);
+            tab.setTextColor(accent);
+        } else {
+            tab.setBackground(null);
+            tab.setTextColor(greyColor);
+        }
+    }
+
+    private void showConsole(boolean show) {
+        consoleOpen = show;
+        paintTab(tabProgress, !show);
+        paintTab(tabTerminal, show);
+        consoleScroll.setVisibility(show ? View.VISIBLE : View.GONE);
+        bodyScroll.setVisibility(show ? View.GONE : View.VISIBLE);
+        consoleCopy.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (show) {
             consoleDirty = true;
             drain();
-            bodyScroll.post(() -> bodyScroll.fullScroll(View.FOCUS_DOWN));
         }
     }
 

@@ -58,6 +58,7 @@ public class SettingsHomeFragment extends Fragment {
         SwitchMaterial hide = view.findViewById(R.id.hide);
         SwitchMaterial autoScan = view.findViewById(R.id.autoscan_switch);
         SwitchMaterial autoWifi = view.findViewById(R.id.autowifi_switch);
+        SwitchMaterial promo = view.findViewById(R.id.promo_switch);
         SwitchMaterial autoBanner = view.findViewById(R.id.banner_detect);
         SwitchMaterial pixieIfaceDown = view.findViewById(R.id.pixie_iface_down_switch);
         LinearLayout pixieIfaceDownRow = view.findViewById(R.id.pixie_iface_down_row);
@@ -65,6 +66,7 @@ public class SettingsHomeFragment extends Fragment {
         View internalDeauthDivider = view.findViewById(R.id.internal_deauth_divider);
         SwitchMaterial internalDeauth = view.findViewById(R.id.internal_deauth_switch);
         LinearLayout autoWifiRow = view.findViewById(R.id.autowifi_row);
+        LinearLayout promoRow = view.findViewById(R.id.promo_row);
         LinearLayout saveApsRow = view.findViewById(R.id.save_aps_row);
         LinearLayout autoScanRow = view.findViewById(R.id.autoscan_row);
         LinearLayout bannerRow = view.findViewById(R.id.banner_row);
@@ -98,6 +100,11 @@ public class SettingsHomeFragment extends Fragment {
         autoWifi.setOnCheckedChangeListener((btn, b) -> core.putBoolean("wifi", b));
         autoScan.setOnCheckedChangeListener((btn, b) -> core.putBoolean("autoScan", b));
 
+        promo.setChecked(!core.getBoolean(
+                com.zalexdev.stryker.utils.PromoDialogs.KEY_MUTED));
+        promo.setOnCheckedChangeListener((btn, b) -> core.putBoolean(
+                com.zalexdev.stryker.utils.PromoDialogs.KEY_MUTED, !b));
+        bindRowToSwitch(promoRow, promo);
         bindRowToSwitch(autoWifiRow, autoWifi);
         bindRowToSwitch(saveApsRow, saveAps);
         bindRowToSwitch(pixieIfaceDownRow, pixieIfaceDown);
@@ -133,12 +140,14 @@ public class SettingsHomeFragment extends Fragment {
 
         LinearLayout engineSection = view.findViewById(R.id.engine_section);
         LinearLayout vmSettingsRow = view.findViewById(R.id.vm_settings_row);
-        if (core.isRootless()) {
+        boolean wifiGuest = com.zalexdev.stryker.engine.WifiEngine.armed(core);
+        if (core.isRootless() || wifiGuest) {
             engineSection.setVisibility(View.VISIBLE);
             vmSettingsRow.setOnClickListener(v -> openSub(new VmSettingsFragment(), "vm"));
         } else {
             engineSection.setVisibility(View.GONE);
         }
+        bindWifiEngineRow(view, wifiGuest);
 
         if (core.isRootless()) {
             unmountLayout.setVisibility(View.GONE);
@@ -147,6 +156,39 @@ public class SettingsHomeFragment extends Fragment {
             unmountLayout.setOnClickListener(v -> confirmUnmount());
             deleteLayout.setOnClickListener(v -> confirmDelete());
         }
+    }
+
+    private void bindWifiEngineRow(View view, boolean armed) {
+        View card = view.findViewById(R.id.wifi_engine_card);
+        View row = view.findViewById(R.id.wifi_engine_row);
+        android.widget.TextView state = view.findViewById(R.id.wifi_engine_state);
+        if (card == null || row == null || state == null) return;
+        if (!armed) {
+            card.setVisibility(View.GONE);
+            return;
+        }
+        card.setVisibility(View.VISIBLE);
+        com.zalexdev.stryker.engine.EngineType type =
+                com.zalexdev.stryker.engine.WifiEngine.configured(core);
+        String name = getString(type == com.zalexdev.stryker.engine.EngineType.UML
+                ? R.string.engine_uml_name : R.string.engine_vm_name);
+        state.setText(getString(R.string.wifi_guest_settings_on, name));
+        row.setOnClickListener(v -> confirmWifiEngineOff());
+    }
+
+    private void confirmWifiEngineOff() {
+        if (getContext() == null) return;
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(getContext())
+                .setTitle(R.string.wifi_guest_settings_title)
+                .setMessage(R.string.wifi_guest_turn_off_body)
+                .setPositiveButton(R.string.wifi_guest_turn_off, (d, w) -> {
+                    com.zalexdev.stryker.engine.WifiEngine.disarm(core);
+                    com.zalexdev.stryker.engine.RootlessService.stop(requireContext());
+                    View root = getView();
+                    if (root != null) bindWifiEngineRow(root, false);
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     private void openSub(Fragment f, String tag) {

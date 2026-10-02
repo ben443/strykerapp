@@ -4,7 +4,7 @@ import android.content.ClipboardManager;
 import android.content.ClipboardManager.OnPrimaryClipChangedListener;
 import android.content.Context;
 import android.os.Build;
-import android.util.Log;
+import com.stryker.terminal.bridge.StrykerLog;
 
 
 public abstract class Clipboard {
@@ -31,7 +31,7 @@ public abstract class Clipboard {
         if (clipboard != null)
           clipboard.setText(text);
       } catch (Exception e) {
-        Log.i("SDL", "setClipboardText() exception: " + e.toString());
+        StrykerLog.i("SDL", "setClipboardText() exception: " + e.toString());
       }
     }
 
@@ -42,7 +42,7 @@ public abstract class Clipboard {
         if (clipboard != null && clipboard.getText() != null)
           ret = clipboard.getText().toString();
       } catch (Exception e) {
-        Log.i("SDL", "getClipboardText() exception: " + e.toString());
+        StrykerLog.i("SDL", "getClipboardText() exception: " + e.toString());
       }
       return ret;
     }
@@ -68,7 +68,7 @@ public abstract class Clipboard {
         if (clipboard != null)
           clipboard.setText(text);
       } catch (Exception e) {
-        Log.i("SDL", "setClipboardText() exception: " + e.toString());
+        StrykerLog.i("SDL", "setClipboardText() exception: " + e.toString());
       }
     }
 
@@ -79,13 +79,13 @@ public abstract class Clipboard {
         if (clipboard != null && clipboard.getText() != null)
           ret = clipboard.getText().toString();
       } catch (Exception e) {
-        Log.i("SDL", "getClipboardText() exception: " + e.toString());
+        StrykerLog.i("SDL", "getClipboardText() exception: " + e.toString());
       }
       return ret;
     }
 
     public void setListener(final Context context, final Runnable listener) {
-      Log.i("SDL", "Cannot set clipboard listener on Android 2.3 or older");
+      StrykerLog.i("SDL", "Cannot set clipboard listener on Android 2.3 or older");
     }
   }
 }
