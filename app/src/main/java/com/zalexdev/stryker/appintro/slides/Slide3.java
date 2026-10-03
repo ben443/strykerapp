@@ -143,8 +143,10 @@ public class Slide3 extends Fragment implements IntroPage {
         setStatus(StatusKind.RUNNING, "Stryker chroot", "Starting...");
         log(LogLevel.INFO, "Architecture: arm64-v8a");
         log(LogLevel.INFO, "Stryker " + BuildConfig.VERSION_NAME + " · build " + BuildConfig.VERSION_CODE);
-        if (activity instanceof com.zalexdev.stryker.appintro.AppIntroActivity
-                && ((com.zalexdev.stryker.appintro.AppIntroActivity) activity).isMigration()) {
+        if (activity instanceof AppIntroActivity && ((AppIntroActivity) activity).isUpdate()) {
+            log(LogLevel.STEP, getString(R.string.setup_update_body));
+        }
+        if (activity instanceof AppIntroActivity && ((AppIntroActivity) activity).isMigration()) {
             log(LogLevel.WARN, "An older Linux system is installed. It will be unmounted and "
                     + "replaced with the Debian rootfs; installed packages are not carried over.");
         }

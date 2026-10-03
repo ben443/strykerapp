@@ -69,6 +69,9 @@ public class SlideQemuInstall extends Fragment implements IntroPage {
 
     private boolean offline = false;
 
+    private boolean replacePayload = false;
+    private boolean wiped = false;
+
     @Nullable
     @Override
     public View onCreateView(LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
@@ -77,6 +80,8 @@ public class SlideQemuInstall extends Fragment implements IntroPage {
         context = getContext();
         core = new Core(context);
         mPager = activity.findViewById(R.id.view_pager);
+        replacePayload = activity instanceof AppIntroActivity
+                && ((AppIntroActivity) activity).replacesPayload();
 
         statusTitle = view.findViewById(R.id.status_title);
         statusSubtitle = view.findViewById(R.id.status_subtitle);
@@ -147,6 +152,7 @@ public class SlideQemuInstall extends Fragment implements IntroPage {
     }
 
     private void runPlan() {
+        dropStalePayload();
         List<EngineType> plan = installPlan();
         if (plan.isEmpty()) {
             allFailed();
@@ -170,6 +176,19 @@ public class SlideQemuInstall extends Fragment implements IntroPage {
         allFailed();
     }
 
+    private void dropStalePayload() {
+        if (!replacePayload || wiped) return;
+        wiped = true;
+        setStatus(StatusKind.RUNNING, context.getString(R.string.setup_update_title),
+                context.getString(R.string.setup_update_body));
+        log(LogLevel.STEP, context.getString(R.string.setup_update_body));
+        Engines.stopAll(context);
+        long freed = com.zalexdev.stryker.engine.EnginePayload.wipe(context);
+        if (freed > 0) {
+            log(LogLevel.INFO, context.getString(R.string.setup_update_freed, formatMb(freed)));
+        }
+    }
+
     private String planNames(List<EngineType> plan) {
         StringBuilder sb = new StringBuilder();
         for (EngineType t : plan) {
@@ -179,8 +198,31 @@ public class SlideQemuInstall extends Fragment implements IntroPage {
         return sb.toString();
     }
 
+    private EngineType leadEngine(EngineType recorded) {
+        if (!replacePayload || recorded != EngineType.ROOTLESS) return recorded;
+        if (!EngineType.rootlessSupported(context)) return recorded;
+
+        String umlName = Engines.active(context, EngineType.UML).displayName();
+        setStatus(StatusKind.RUNNING, context.getString(R.string.setup_caps_title),
+                context.getString(R.string.setup_caps_running, umlName));
+        log(LogLevel.STEP, "This install picked the virtual machine before " + umlName
+                + " existed — testing it first");
+
+        com.zalexdev.stryker.engine.UmlProbe.Result probe =
+                com.zalexdev.stryker.engine.UmlProbe.run(context);
+        DeviceCapabilities.rememberUmlNotes(core, probe);
+        if (probe.ruledOut()) {
+            log(LogLevel.INFO, umlName + " will not run here: " + probe.detail
+                    + " — staying on the virtual machine");
+            return recorded;
+        }
+        log(LogLevel.SUCCESS, umlName + ": " + probe.detail
+                + " — it boots faster, and the virtual machine stays as the fallback");
+        return EngineType.UML;
+    }
+
     private List<EngineType> installPlan() {
-        EngineType chosen = EngineType.active(core);
+        EngineType chosen = leadEngine(EngineType.active(core));
         List<EngineType> detected = DeviceCapabilities.plan(core);
         List<EngineType> plan = new ArrayList<>();
 
@@ -384,6 +426,7 @@ public class SlideQemuInstall extends Fragment implements IntroPage {
         EngineType.persist(core, engineType);
         core.putBoolean(EngineType.PREF_VERIFIED, true);
         core.putBoolean(EngineType.PREF_FORCED, false);
+        com.zalexdev.stryker.engine.EnginePayload.mark(core);
 
         setStatus(StatusKind.SUCCESS, engine.displayName(), "Done — moving on");
         runOnUi(() -> {

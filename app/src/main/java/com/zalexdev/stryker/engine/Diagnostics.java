@@ -50,6 +50,7 @@ public final class Diagnostics {
         com.zalexdev.stryker.utils.Core core = new com.zalexdev.stryker.utils.Core(app);
         b.append("engine         ").append(EngineType.active(core)).append('\n');
         b.append("rootless       ").append(core.isRootless()).append('\n');
+        b.append("payload        ").append(EnginePayload.describe(core)).append('\n');
         GuestEngine up = Engines.running(app);
         b.append("running        ").append(up == null ? "none" : up.displayName()).append('\n');
         b.append('\n');

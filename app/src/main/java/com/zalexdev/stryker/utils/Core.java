@@ -96,9 +96,9 @@ public class Core {
     public final static String SHELL = "bash";
     public final static String CHROOT_ROOT = "/data/local/stryker/release";
 
-    public final static String CHROOT_MARKER_VERSION = "6.0";
+    public final static String CHROOT_MARKER_VERSION = "6.5";
     public final static String CHROOT_MARKER = CHROOT_ROOT + "/" + CHROOT_MARKER_VERSION;
-    private final static String[] LEGACY_CHROOT_MARKERS = {"4.0"};
+    private final static String[] LEGACY_CHROOT_MARKERS = {"6.0", "4.0"};
     public final static String HIDDEN_MAC = "XX:XX:XX:XX:XX:XX";
     public final String versionName = BuildConfig.VERSION_NAME;
     public final int versionInt = BuildConfig.VERSION_CODE;

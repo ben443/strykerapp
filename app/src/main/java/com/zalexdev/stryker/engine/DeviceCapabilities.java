@@ -166,6 +166,11 @@ public final class DeviceCapabilities {
         core.putString(K_UML_NOTES, android.text.TextUtils.join("\n", report.umlNotes));
     }
 
+    public static void rememberUmlNotes(Core core, UmlProbe.Result probe) {
+        if (core == null || probe == null) return;
+        core.putString(K_UML_NOTES, android.text.TextUtils.join("\n", probe.notes));
+    }
+
     public static EngineType recommended(Core core) {
         if (core == null) return null;
         return parse(core.getString(K_RECOMMENDED));

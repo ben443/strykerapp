@@ -26,6 +26,10 @@
     <string name="setup_install_offline_title">No connection</string>
     <string name="setup_install_offline_body">The engine downloads from GitHub. Connect and retry.</string>
 
+    <string name="setup_update_title">Updating the engine</string>
+    <string name="setup_update_body">This release boots a different Linux system. The old one is removed and the new one installed now; your settings are kept.</string>
+    <string name="setup_update_freed">Removed the previous image — %1$s freed</string>
+
     <string name="setup_gate_title">Engine did not start</string>
     <string name="setup_gate_body">%1$s failed to boot. Switching to %2$s and reinstalling.</string>
     <string name="setup_gate_action">Reinstall</string>

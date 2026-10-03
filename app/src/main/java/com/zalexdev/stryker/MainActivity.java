@@ -415,10 +415,27 @@ public class MainActivity extends AppCompatActivity {
     private void startRootlessLaunch() {
         com.zalexdev.stryker.engine.GuestEngine engine =
                 com.zalexdev.stryker.engine.Engines.active(core);
-        boolean verified = isEngineVerified(engine);
         boolean forced = core.getBoolean(
                 com.zalexdev.stryker.engine.EngineType.PREF_FORCED);
-        if (!core.getBoolean("first_open") || !engine.isInstalled() || !(verified || forced)) {
+        if (!core.getBoolean("first_open")) {
+            core.putString("username", "User");
+            launchRunning = false;
+            startActivity(new Intent(this, AppIntroActivity.class));
+            return;
+        }
+        com.zalexdev.stryker.engine.EngineType chosen =
+                com.zalexdev.stryker.engine.EngineType.active(core);
+        if (!forced && com.zalexdev.stryker.engine.EnginePayload.outdated(core)) {
+            launchRunning = false;
+            startActivity(AppIntroActivity.replaceIntent(this, chosen));
+            return;
+        }
+        if (!engine.isInstalled()) {
+            launchRunning = false;
+            startActivity(AppIntroActivity.updateIntent(this, chosen));
+            return;
+        }
+        if (!isEngineVerified(engine) && !forced) {
             core.putString("username", "User");
             launchRunning = false;
             startActivity(new Intent(this, AppIntroActivity.class));
@@ -522,19 +539,15 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         new Thread(() -> {
-            if (core.probeFile(Core.CHROOT_MARKER) == Core.Presence.NO) {
-                core.putString("username", "User");
+            if (core.probeFile(Core.CHROOT_MARKER) == Core.Presence.NO
+                    || core.probeFolder(Core.CHROOT_ROOT + "/usr") == Core.Presence.NO) {
                 launchRunning = false;
-                Intent intro = new Intent(this, AppIntroActivity.class);
-                if (core.hasLegacyChroot()) intro.putExtra(AppIntroActivity.EXTRA_MIGRATE, true);
-                startActivity(intro);
-                return;
-            }
-            if (core.probeFolder("/data/local/stryker/release/usr") == Core.Presence.NO) {
-                launchRunning = false;
-                Intent install = new Intent(this, AppIntroActivity.class);
-                install.putExtra("update", false);
-                startActivity(install);
+                Intent update = AppIntroActivity.updateIntent(this,
+                        com.zalexdev.stryker.engine.EngineType.CHROOT);
+                if (core.hasLegacyChroot()) {
+                    update.putExtra(AppIntroActivity.EXTRA_MIGRATE, true);
+                }
+                startActivity(update);
                 return;
             }
             boolean mounted = core.isMounted() || core.mountCore();

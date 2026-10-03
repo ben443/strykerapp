@@ -1,5 +1,7 @@
 package com.zalexdev.stryker.appintro;
 
+import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
@@ -43,10 +45,35 @@ public class AppIntroActivity extends FragmentActivity {
 
     public static final String EXTRA_REPAIR_ENGINE = "repair_engine";
 
+    public static final String EXTRA_UPDATE_ENGINE = "update_engine";
+
+    public static final String EXTRA_REPLACE_PAYLOAD = "replace_payload";
+
     public enum Page { WELCOME, CONSENT, CAPS, ENGINE, PERMS, PCHECK, INSTALL_CHROOT, INSTALL_QEMU, FINAL }
+
+    public static Intent updateIntent(Context context, EngineType engine) {
+        Intent intent = new Intent(context, AppIntroActivity.class);
+        intent.putExtra(EXTRA_UPDATE_ENGINE, engine.name());
+        return intent;
+    }
+
+    public static Intent replaceIntent(Context context, EngineType engine) {
+        Intent intent = updateIntent(context, engine);
+        intent.putExtra(EXTRA_REPLACE_PAYLOAD, true);
+        return intent;
+    }
 
     public boolean isMigration() {
         return getIntent() != null && getIntent().getBooleanExtra(EXTRA_MIGRATE, false);
+    }
+
+    public boolean isUpdate() {
+        return updateTarget() != null;
+    }
+
+    public boolean replacesPayload() {
+        return getIntent() != null
+                && getIntent().getBooleanExtra(EXTRA_REPLACE_PAYLOAD, false);
     }
 
     private final List<Page> pages = new ArrayList<>(Arrays.asList(
@@ -82,6 +109,7 @@ public class AppIntroActivity extends FragmentActivity {
 
         if (isMigration()) pages.remove(Page.WELCOME);
         applyRepairFlow();
+        applyUpdateFlow();
 
         mPager.setUserInputEnabled(false);
         mPager.setPageTransformer(new SlideFadeTransformer());
@@ -222,18 +250,39 @@ public class AppIntroActivity extends FragmentActivity {
     }
 
     private void applyRepairFlow() {
-        String name = getIntent() == null ? null : getIntent().getStringExtra(EXTRA_REPAIR_ENGINE);
-        if (name == null || name.isEmpty()) return;
-        EngineType target = null;
-        for (EngineType t : EngineType.values()) {
-            if (t.name().equals(name)) target = t;
-        }
+        EngineType target = engineExtra(EXTRA_REPAIR_ENGINE);
         if (target == null || target == EngineType.CHROOT) return;
 
         EngineType.persist(new com.zalexdev.stryker.utils.Core(this), target);
         pages.clear();
         pages.add(Page.INSTALL_QEMU);
         pages.add(Page.FINAL);
+    }
+
+    private EngineType updateTarget() {
+        return engineExtra(EXTRA_UPDATE_ENGINE);
+    }
+
+    private void applyUpdateFlow() {
+        EngineType target = updateTarget();
+        if (target == null) return;
+        pages.clear();
+        if (target == EngineType.CHROOT) {
+            pages.add(Page.PCHECK);
+            pages.add(Page.INSTALL_CHROOT);
+        } else {
+            pages.add(Page.INSTALL_QEMU);
+        }
+        pages.add(Page.FINAL);
+    }
+
+    private EngineType engineExtra(String key) {
+        String name = getIntent() == null ? null : getIntent().getStringExtra(key);
+        if (name == null || name.isEmpty()) return null;
+        for (EngineType t : EngineType.values()) {
+            if (t.name().equals(name)) return t;
+        }
+        return null;
     }
 
     public void applyEngineFlow(EngineType type) {
