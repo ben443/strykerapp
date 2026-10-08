@@ -124,7 +124,7 @@ for fw in ath9k_htc/htc_9271-1.4.0.fw mt7601u.bin mediatek/mt7610u.bin \
 done
 
 say "checking the tools the app runs"
-for t in aircrack-ng airodump-ng aireplay-ng airmon-ng wash reaver bully \
+for t in aircrack-ng airodump-ng aireplay-ng airmon-ng wifite wash reaver bully \
          pixiewps mdk4 hydra nmap macchanger hcxdumptool hcxpcapngtool \
          tcpdump iw wpa_supplicant python3 socat usbip; do
 	if ssh "${SSHOPT[@]}" root@127.0.0.1 "command -v $t >/dev/null" 2>/dev/null; then

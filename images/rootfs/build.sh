@@ -85,7 +85,7 @@ fi
 say "checking every command the guest calls is present"
 missing=
 for c in sshd ssh-keygen resize2fs e2fsck ps ip iw iptables mount sed grep \
-         hostname aircrack-ng airodump-ng aireplay-ng airmon-ng reaver wash \
+         hostname aircrack-ng airodump-ng aireplay-ng airmon-ng wifite reaver wash \
          bully pixiewps mdk4 hydra nmap macchanger hcxdumptool hcxpcapngtool \
          tcpdump socat python3 depmod modprobe; do
 	found=
